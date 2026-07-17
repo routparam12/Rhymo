@@ -262,6 +262,8 @@ fun RhymoApp() {
                                         onReact = socialMusicStore::react,
                                         onAddComment = socialMusicStore::addComment,
                                         onToggleCommentLike = socialMusicStore::toggleCommentLike,
+                                        onEditComment = socialMusicStore::editComment,
+                                        onDeleteComment = socialMusicStore::deleteComment,
                                         onPlayQueue = { song, queue ->
                                             activeQueue = queue
                                             selectedSongIndex = queue.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
@@ -577,6 +579,8 @@ private fun SwipePlayer(
     onReact: (String, String) -> Unit,
     onAddComment: (String, String, String) -> Unit,
     onToggleCommentLike: (String, String) -> Unit,
+    onEditComment: (String, String, String) -> Unit,
+    onDeleteComment: (String, String) -> Unit,
     onPlayQueue: (Song, List<Song>) -> Unit,
     onShare: (Song) -> Unit,
     onClose: () -> Unit
@@ -649,6 +653,8 @@ private fun SwipePlayer(
             onReact = { emoji -> onReact(song.id, emoji) },
             onAddComment = { author, message -> onAddComment(song.id, author, message) },
             onToggleCommentLike = { commentId -> onToggleCommentLike(song.id, commentId) },
+            onEditComment = { commentId, message -> onEditComment(song.id, commentId, message) },
+            onDeleteComment = { commentId -> onDeleteComment(song.id, commentId) },
             onPlayQueue = onPlayQueue,
             onShare = { onShare(song) },
             onClose = onClose
@@ -677,6 +683,8 @@ private fun PlayerPage(
     onReact: (String) -> Unit,
     onAddComment: (String, String) -> Unit,
     onToggleCommentLike: (String) -> Unit,
+    onEditComment: (String, String) -> Unit,
+    onDeleteComment: (String) -> Unit,
     onPlayQueue: (Song, List<Song>) -> Unit,
     onShare: () -> Unit,
     onClose: () -> Unit
@@ -748,6 +756,8 @@ private fun PlayerPage(
             onReact = onReact,
             onAddComment = onAddComment,
             onToggleCommentLike = onToggleCommentLike,
+            onEditComment = onEditComment,
+            onDeleteComment = onDeleteComment,
             onDismiss = { playerSheet = null }
         )
         PlayerSheet.Recommendations -> RecommendationsSheet(

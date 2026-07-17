@@ -72,6 +72,24 @@ class SocialMusicStore(context: Context) {
         updateConversation(songId, current.copy(comments = comments))
     }
 
+    fun editComment(songId: String, commentId: String, message: String) {
+        val cleanMessage = message.trim().take(MAX_COMMENT_LENGTH)
+        if (cleanMessage.isBlank()) return
+        val current = _conversations.value[songId] ?: return
+        val comments = current.comments.map { comment ->
+            if (comment.id == commentId) comment.copy(message = cleanMessage) else comment
+        }
+        updateConversation(songId, current.copy(comments = comments))
+    }
+
+    fun deleteComment(songId: String, commentId: String) {
+        val current = _conversations.value[songId] ?: return
+        updateConversation(
+            songId,
+            current.copy(comments = current.comments.filterNot { it.id == commentId })
+        )
+    }
+
     private fun updateConversation(songId: String, conversation: SongConversation) {
         val updated = _conversations.value.toMutableMap().apply { put(songId, conversation) }.toMap()
         preferences.edit { putString(KEY_CONVERSATIONS, updated.toJson().toString()) }

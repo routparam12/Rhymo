@@ -24,10 +24,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Lyrics
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -37,6 +44,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -184,10 +192,62 @@ fun CommentsSheet(
     onReact: (String) -> Unit,
     onAddComment: (String, String) -> Unit,
     onToggleCommentLike: (String) -> Unit,
+    onEditComment: (String, String) -> Unit,
+    onDeleteComment: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var draft by remember(song.id) { mutableStateOf("") }
+    var menuCommentId by remember(song.id) { mutableStateOf<String?>(null) }
+    var editingCommentId by remember(song.id) { mutableStateOf<String?>(null) }
+    var editDraft by remember(song.id) { mutableStateOf("") }
+    var deletingCommentId by remember(song.id) { mutableStateOf<String?>(null) }
     val reactions = listOf("🔥", "💜", "🎧", "✨")
+
+    if (editingCommentId != null) {
+        AlertDialog(
+            onDismissRequest = { editingCommentId = null },
+            icon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+            title = { Text("Edit comment") },
+            text = {
+                OutlinedTextField(
+                    value = editDraft,
+                    onValueChange = { editDraft = it.take(280) },
+                    label = { Text("Comment") },
+                    minLines = 2,
+                    maxLines = 4
+                )
+            },
+            confirmButton = {
+                Button(
+                    enabled = editDraft.isNotBlank(),
+                    onClick = {
+                        editingCommentId?.let { onEditComment(it, editDraft) }
+                        editingCommentId = null
+                    }
+                ) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { editingCommentId = null }) { Text("Cancel") } }
+        )
+    }
+
+    if (deletingCommentId != null) {
+        AlertDialog(
+            onDismissRequest = { deletingCommentId = null },
+            icon = { Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Delete comment?") },
+            text = { Text("This comment will be permanently removed from this conversation.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        deletingCommentId?.let(onDeleteComment)
+                        deletingCommentId = null
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { deletingCommentId = null }) { Text("Cancel") } }
+        )
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -241,6 +301,33 @@ fun CommentsSheet(
                                     Text(comment.message, lineHeight = 20.sp)
                                 }
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box {
+                                        IconButton(onClick = { menuCommentId = comment.id }, modifier = Modifier.size(38.dp)) {
+                                            Icon(Icons.Filled.MoreVert, contentDescription = "More options for comment", tint = Muted)
+                                        }
+                                        DropdownMenu(
+                                            expanded = menuCommentId == comment.id,
+                                            onDismissRequest = { menuCommentId = null }
+                                        ) {
+                                            DropdownMenuItem(
+                                                text = { Text("Edit") },
+                                                leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                                                onClick = {
+                                                    menuCommentId = null
+                                                    editDraft = comment.message
+                                                    editingCommentId = comment.id
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                                                leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                                                onClick = {
+                                                    menuCommentId = null
+                                                    deletingCommentId = comment.id
+                                                }
+                                            )
+                                        }
+                                    }
                                     IconButton(onClick = { onToggleCommentLike(comment.id) }, modifier = Modifier.size(38.dp)) {
                                         Icon(
                                             if (comment.likedByMe) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
