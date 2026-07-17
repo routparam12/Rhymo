@@ -23,12 +23,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rhymo.music.model.Song
 import com.rhymo.music.ui.theme.Muted
 import com.rhymo.music.ui.theme.DarkPaper
+import coil3.compose.AsyncImage
 
 /** Compose equivalent of a RecyclerView adapter, reusable by every music list. */
 fun LazyListScope.musicItems(songs: List<Song>, onSongClick: (Song) -> Unit) {
@@ -44,7 +46,16 @@ fun MusicListItem(song: Song, onClick: () -> Unit, modifier: Modifier = Modifier
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.size(64.dp).clip(RoundedCornerShape(16.dp)).background(Brush.linearGradient(song.colors)), contentAlignment = Alignment.Center) {
-            Icon(Icons.Filled.MusicNote, contentDescription = null, tint = DarkPaper)
+            if (song.artworkUrl != null) {
+                AsyncImage(
+                    model = song.artworkUrl,
+                    contentDescription = "${song.title} artwork",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize()
+                )
+            } else {
+                Icon(Icons.Filled.MusicNote, contentDescription = null, tint = DarkPaper)
+            }
         }
         Spacer(Modifier.width(14.dp))
         androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {

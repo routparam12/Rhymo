@@ -10,5 +10,7 @@ data class Song(
     val tag: String,
     val colors: List<Color>,
     val duration: String,
-    val streamUrl: String
+    val streamUrl: String,
+    val artworkUrl: String? = null,
+    val album: String? = null
 )

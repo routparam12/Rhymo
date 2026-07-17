@@ -10,25 +10,34 @@ Rhymo is a completely free experience. There will be no Premium tier, subscripti
 
 ## Phase 1 goal
 
-Build a polished, interactive Android UI prototype that validates the product experience before connecting production services.
+Build a polished, interactive Android experience and connect the first functional authentication, catalog, and playback services.
 
 ### Included
 
 - Welcome/onboarding screen with a clear value proposition
 - Google sign-in UI and a guest preview path
 - Home discovery screen with personalized greeting, search, trending topics, and new releases
-- Search screen with recent searches, genre filters, and live local filtering
+- Search screen with suggestions, debounced remote search, loading/error/empty states, and real artwork
 - Full-screen vertical swipe player with play/pause, like, save, share, progress, and song metadata
 - Library screen with favorites, downloads, and playlists entry points
 - Responsive dark visual system, edge-to-edge layout, accessible touch targets, and visible navigation state
 
-### Deferred to Phase 2
+### Functional foundation now implemented
 
-- Real Google OAuth and account persistence
-- Production music catalog/search API
-- Audio streaming, background playback, media controls, and downloads
+- Firebase Google authentication and account persistence
+- Prototype catalog/search through `https://saavn.sumit.co/api/search/songs`
+- Retrofit/Gson response mapping with highest-quality available artwork and 320 kbps stream selection
+- Media3 audio streaming, background playback, media controls, seek synchronization, and media notification metadata
+- Local demo catalog fallback when the discovery request is unavailable
+
+### Still deferred
+
+- Licensed production catalog and music-rights agreements
+- Offline downloads
 - Synced likes, playlists, history, and recommendations
 - Sharing deep links and artist/song detail pages
+
+> The current Saavn endpoint is an unofficial API and is appropriate for prototyping only. Before release, confirm its terms, availability, and the necessary music streaming rights or replace it with a licensed provider.
 
 ## Primary user journey
 
@@ -94,13 +103,13 @@ Dependencies are added only when their feature enters active development, keepin
 - Kotlin Coroutines for asynchronous authentication and UI work
 - Firebase Authentication with Android Credential Manager
 - Media3 ExoPlayer hosted in a MediaSessionService for real streaming, background playback, lock-screen controls, and MediaStyle notifications
+- Retrofit with Gson for Saavn search/catalog responses
+- Coil for remote album artwork in lists, cards, and the full-screen player
 
 ### Phase 2 — Playback and real data
 
 - Navigation Compose for typed screen navigation and deep links
-- Licensed catalog integration to replace the current public test stream
-- Coil for album and artist artwork
-- Retrofit, OkHttp, and Kotlin Serialization for catalog APIs
+- Licensed catalog integration to replace the current prototype provider before production
 - Room plus Flow for likes, history, playlists, and offline metadata
 - Hilt for dependency injection once repositories and services are separated
 - Paging 3 for large search and discovery feeds

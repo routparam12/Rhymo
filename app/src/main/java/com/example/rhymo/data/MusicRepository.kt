@@ -9,12 +9,12 @@ import com.rhymo.music.ui.theme.NeonBlue
 import com.rhymo.music.ui.theme.Violet
 
 interface MusicRepository {
-    fun trending(): List<Song>
-    fun search(query: String): List<Song>
+    suspend fun trending(): Result<List<Song>>
+    suspend fun search(query: String, page: Int = 0, limit: Int = 20): Result<List<Song>>
 }
 
-/** Replace with the API/Room repository without changing any screen or adapter. */
-object DemoMusicRepository : MusicRepository {
+/** Small offline fallback used when the prototype catalog cannot be reached. */
+object DemoMusicRepository {
     private const val demoStream = "https://storage.googleapis.com/exoplayer-test-media-0/play.mp3"
 
     val songs = listOf(
@@ -24,9 +24,7 @@ object DemoMusicRepository : MusicRepository {
         Song("coastline", "Coastline", "Daylight Club", "ELECTRONIC · RISING", listOf(Color(0xFF46CBEA), Color(0xFF173A5B), DarkInk), "3:12", demoStream)
     )
 
-    override fun trending(): List<Song> = songs
-
-    override fun search(query: String): List<Song> = songs.filter {
+    fun search(query: String): List<Song> = songs.filter {
         query.isBlank() || it.title.contains(query, true) || it.artist.contains(query, true)
     }
 }
