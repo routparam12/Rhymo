@@ -33,6 +33,19 @@ object SaavnMusicRepository : MusicRepository {
         check(response.success) { "The music service could not complete this search." }
         response.data.orEmptyResults().mapNotNull(SaavnSongDto::toSong)
     }
+
+    /** Provider suggestions currently fail for some valid IDs, so artist search is the resilient fallback. */
+    suspend fun recommendations(song: Song, limit: Int = 16): Result<List<Song>> {
+        val suggestions = runCatching {
+            val response = api.songSuggestions(song.id, limit.coerceIn(1, 40))
+            check(response.success) { "Suggestions are temporarily unavailable." }
+            response.data.mapNotNull(SaavnSongDto::toSong).filterNot { it.id == song.id }
+        }.getOrNull().orEmpty()
+        if (suggestions.isNotEmpty()) return Result.success(suggestions)
+
+        return search(song.artist.substringBefore(',').ifBlank { song.title }, limit = limit)
+            .map { related -> related.filterNot { it.id == song.id } }
+    }
 }
 
 private fun com.rhymo.music.data.remote.SaavnSearchData?.orEmptyResults(): List<SaavnSongDto> =
@@ -53,6 +66,7 @@ private fun SaavnSongDto.toSong(): Song? {
         tag = "$languageLabel · ${label?.decodeEntities()?.ifBlank { "For you" } ?: "For you"}".uppercase(),
         colors = colorsFor(songId),
         duration = duration.toDurationLabel(),
+        durationSeconds = duration,
         streamUrl = stream,
         artworkUrl = image.bestUrl(preferredQuality = "500x500"),
         album = album?.name?.decodeEntities(),

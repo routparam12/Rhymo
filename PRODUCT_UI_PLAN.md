@@ -37,7 +37,7 @@ Build a polished, interactive Android experience and connect the first functiona
 ### Still deferred
 
 - Licensed production catalog and music-rights agreements
-- Synced likes, playlists, history, and recommendations
+- Cross-device sync for likes, playlists, history, and recommendations
 - Sharing deep links and artist/song detail pages
 
 > The current Saavn endpoint is an unofficial API and is appropriate for prototyping only. Before release, confirm its terms, availability, and the necessary music streaming rights or replace it with a licensed provider.
@@ -91,6 +91,38 @@ Google authentication, catalog provider, audio engine, local persistence, and ba
 ### Phase 3 — Personalization & social
 
 Recommendation signals, collaborative playlists, follows, comments/reactions, and shareable song moments.
+
+## Rhymo social-discovery expansion
+
+The social layer is inspired by modern music-discovery products, but keeps Rhymo's own visual identity, interaction language, and free-product promise.
+
+### Implemented in the current Android prototype
+
+- Playback-synchronized lyrics sheet with highlighted timed lines and a readable plain-lyrics fallback
+- Lyric-line sharing through the Android share sheet
+- Per-song reactions, listener comments, and comment likes
+- Artist follow/unfollow state and a following count on Profile
+- Mood chips that load a real matching Saavn queue instead of acting as decorative filters
+- “More like this” recommendations with a reliable artist-search fallback when the provider suggestion route fails
+- Slow artwork motion in the immersive player, paused with playback
+- Local persistence for comments, reactions, and follows behind a repository boundary that can later be replaced by Firebase
+
+### Production social backend boundary
+
+The prototype stores social actions on the device so every interaction works without requiring a Firestore database or security rules. For real multi-user comments, reaction counts, follows, moderation, and cross-device sync, replace `SocialMusicStore` with a Firebase implementation using these collections:
+
+- `users/{uid}/following/{artistKey}`
+- `songs/{songId}/comments/{commentId}`
+- `songs/{songId}/reactions/{uid}`
+
+Before enabling public writes, add authenticated Firestore rules, App Check enforcement, rate limits, report/block tools, and moderation. The UI and domain models do not need to change when that repository is swapped.
+
+### External prototype services
+
+- Song search/playback metadata: unofficial Saavn API
+- Lyrics lookup: LRCLIB API, with timed LRC parsing when synchronized lyrics are available
+
+Both services are prototype dependencies. A production release still needs provider terms review, music/lyrics rights review, resilient caching, and a licensed catalog strategy.
 
 ### Phase 4 — Quality & launch
 

@@ -11,6 +11,7 @@ data class Song(
     val colors: List<Color>,
     val duration: String,
     val streamUrl: String,
+    val durationSeconds: Long? = null,
     val artworkUrl: String? = null,
     val album: String? = null,
     val shareUrl: String? = null

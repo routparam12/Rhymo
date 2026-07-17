@@ -3,6 +3,7 @@ package com.rhymo.music.data
 import android.content.Context
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.core.content.edit
 import com.rhymo.music.model.Song
 import java.io.File
 import java.net.HttpURLConnection
@@ -61,7 +62,7 @@ class SavedMusicStore(context: Context) {
         } else {
             listOf(song) + _likedSongs.value.filterNot { it.id == song.id }
         }
-        preferences.edit().putStringSet(KEY_LIKED_IDS, updatedIds).apply()
+        preferences.edit { putStringSet(KEY_LIKED_IDS, updatedIds) }
         persistSongs(KEY_LIKED_SONGS, updatedSongs)
         _likedSongIds.value = updatedIds
         _likedSongs.value = updatedSongs
@@ -118,7 +119,7 @@ class SavedMusicStore(context: Context) {
         val cleanName = name.trim()
         if (cleanName.isBlank()) return
         val updated = listOf(MusicPlaylist(UUID.randomUUID().toString(), cleanName)) + _playlists.value
-        preferences.edit().putString(KEY_PLAYLISTS, updated.toPlaylistsJson().toString()).apply()
+        preferences.edit { putString(KEY_PLAYLISTS, updated.toPlaylistsJson().toString()) }
         _playlists.value = updated
     }
 
@@ -128,7 +129,7 @@ class SavedMusicStore(context: Context) {
             else if (playlist.songs.any { it.id == song.id }) playlist.copy(songs = playlist.songs.filterNot { it.id == song.id })
             else playlist.copy(songs = playlist.songs + song)
         }
-        preferences.edit().putString(KEY_PLAYLISTS, updated.toPlaylistsJson().toString()).apply()
+        preferences.edit { putString(KEY_PLAYLISTS, updated.toPlaylistsJson().toString()) }
         _playlists.value = updated
     }
 
@@ -146,13 +147,13 @@ class SavedMusicStore(context: Context) {
         val cleanName = name.trim()
         if (cleanName.isBlank()) return
         val updated = _playlists.value.map { if (it.id == playlistId) it.copy(name = cleanName) else it }
-        preferences.edit().putString(KEY_PLAYLISTS, updated.toPlaylistsJson().toString()).apply()
+        preferences.edit { putString(KEY_PLAYLISTS, updated.toPlaylistsJson().toString()) }
         _playlists.value = updated
     }
 
     fun deletePlaylist(playlistId: String) {
         val updated = _playlists.value.filterNot { it.id == playlistId }
-        preferences.edit().putString(KEY_PLAYLISTS, updated.toPlaylistsJson().toString()).apply()
+        preferences.edit { putString(KEY_PLAYLISTS, updated.toPlaylistsJson().toString()) }
         _playlists.value = updated
     }
 
@@ -162,7 +163,7 @@ class SavedMusicStore(context: Context) {
     }.getOrDefault(emptyList())
 
     private fun persistSongs(key: String, songs: List<Song>) {
-        preferences.edit().putString(key, songs.toSongsJson().toString()).apply()
+        preferences.edit { putString(key, songs.toSongsJson().toString()) }
     }
 
     private fun readPlaylists(): List<MusicPlaylist> = runCatching {
@@ -199,6 +200,7 @@ class SavedMusicStore(context: Context) {
                     put("artist", song.artist)
                     put("tag", song.tag)
                     put("duration", song.duration)
+                    song.durationSeconds?.let { put("durationSeconds", it) }
                     put("streamUrl", song.streamUrl)
                     putNullable("artworkUrl", song.artworkUrl)
                     putNullable("album", song.album)
@@ -228,6 +230,7 @@ class SavedMusicStore(context: Context) {
                     tag = item.optString("tag", "MUSIC · SAVED"),
                     colors = colors.ifEmpty { listOf(Color(0xFF8E78FF), Color(0xFF0B0C0F)) },
                     duration = item.optString("duration", "0:00"),
+                    durationSeconds = item.optLong("durationSeconds").takeIf { item.has("durationSeconds") },
                     streamUrl = streamUrl,
                     artworkUrl = item.nullableString("artworkUrl"),
                     album = item.nullableString("album"),

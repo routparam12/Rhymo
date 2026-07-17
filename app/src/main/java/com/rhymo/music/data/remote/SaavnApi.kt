@@ -1,6 +1,7 @@
 package com.rhymo.music.data.remote
 
 import retrofit2.http.GET
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 internal interface SaavnApi {
@@ -10,7 +11,18 @@ internal interface SaavnApi {
         @Query("page") page: Int,
         @Query("limit") limit: Int
     ): SaavnSongSearchResponse
+
+    @GET("api/songs/{id}/suggestions")
+    suspend fun songSuggestions(
+        @Path("id") songId: String,
+        @Query("limit") limit: Int
+    ): SaavnSongSuggestionsResponse
 }
+
+internal data class SaavnSongSuggestionsResponse(
+    val success: Boolean = false,
+    val data: List<SaavnSongDto> = emptyList()
+)
 
 internal data class SaavnSongSearchResponse(
     val success: Boolean = false,

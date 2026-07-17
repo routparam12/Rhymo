@@ -1,7 +1,6 @@
 package com.rhymo.music.notifications
 
 import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -13,6 +12,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.DialogFragment
 import androidx.core.view.WindowCompat
+import androidx.core.graphics.drawable.toDrawable
 import com.rhymo.music.R
 import com.rhymo.music.NotificationsScreen
 import com.rhymo.music.ui.theme.Ink
@@ -45,7 +45,7 @@ class NotificationFragment : DialogFragment() {
         super.onStart()
         dialog?.window?.apply {
             WindowCompat.setDecorFitsSystemWindows(this, false)
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setBackgroundDrawable(Color.TRANSPARENT.toDrawable())
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
     }
