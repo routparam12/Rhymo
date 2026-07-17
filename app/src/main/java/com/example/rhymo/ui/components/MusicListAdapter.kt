@@ -33,14 +33,23 @@ import com.rhymo.music.ui.theme.DarkPaper
 import coil3.compose.AsyncImage
 
 /** Compose equivalent of a RecyclerView adapter, reusable by every music list. */
-fun LazyListScope.musicItems(songs: List<Song>, onSongClick: (Song) -> Unit) {
+fun LazyListScope.musicItems(
+    songs: List<Song>,
+    onSongClick: (Song) -> Unit,
+    onMoreClick: ((Song) -> Unit)? = null
+) {
     items(items = songs, key = Song::id, contentType = { "song" }) { song ->
-        MusicListItem(song = song, onClick = { onSongClick(song) })
+        MusicListItem(song = song, onClick = { onSongClick(song) }, onMoreClick = onMoreClick?.let { { it(song) } })
     }
 }
 
 @Composable
-fun MusicListItem(song: Song, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun MusicListItem(
+    song: Song,
+    onClick: () -> Unit,
+    onMoreClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
     Row(
         modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -64,8 +73,10 @@ fun MusicListItem(song: Song, onClick: () -> Unit, modifier: Modifier = Modifier
         }
         Spacer(Modifier.width(10.dp))
         Text(song.duration, color = Muted, fontSize = 12.sp)
-        IconButton(onClick = {}, modifier = Modifier.size(44.dp)) {
-            Icon(Icons.Filled.MoreVert, contentDescription = "More options", tint = Muted, modifier = Modifier.size(22.dp))
+        if (onMoreClick != null) {
+            IconButton(onClick = onMoreClick, modifier = Modifier.size(44.dp)) {
+                Icon(Icons.Filled.MoreVert, contentDescription = "More options for ${song.title}", tint = Muted, modifier = Modifier.size(22.dp))
+            }
         }
     }
 }

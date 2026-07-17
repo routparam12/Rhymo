@@ -33,6 +33,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -150,6 +152,7 @@ fun RhymoApp() {
     var activeQueue by remember { mutableStateOf(fallbackSongs) }
     var selectedSongIndex by remember { mutableIntStateOf(0) }
     var playerOrigin by remember { mutableStateOf(AppTab.Home) }
+    var optionsSong by remember { mutableStateOf<Song?>(null) }
 
     LaunchedEffect(onboarded) {
         if (onboarded) {
@@ -216,11 +219,12 @@ fun RhymoApp() {
                                 AppTab.Home -> HomeScreen(
                                     songs = catalog,
                                     openPlayer = openSong,
+                                    onSongOptions = { optionsSong = it },
                                     openSearch = { tab = AppTab.Search },
                                     openNotifications = { NotificationFragment().show(activity.supportFragmentManager, NotificationFragment.TAG) },
                                     openProfile = { tab = AppTab.Profile }
                                 )
-                                AppTab.Search -> SearchScreen(popularSongs = catalog, openPlayer = openSong)
+                                AppTab.Search -> SearchScreen(popularSongs = catalog, openPlayer = openSong, onSongOptions = { optionsSong = it })
                                 AppTab.Swipe -> SwipePlayer(
                                     songs = activeQueue,
                                     initialSongIndex = selectedSongIndex,
@@ -234,7 +238,7 @@ fun RhymoApp() {
                                     onToggleLike = savedMusicStore::toggleLiked,
                                     onToggleSave = savedMusicStore::toggleSaved,
                                     onDownload = savedMusicStore::download,
-                                    onAddToPlaylist = { playlistId, song -> savedMusicStore.addToPlaylist(playlistId, song) },
+                                    onAddToPlaylist = { playlistId, song -> savedMusicStore.toggleSongInPlaylist(playlistId, song) },
                                     onShare = { shareSong(activity, it) },
                                     onClose = { tab = playerOrigin }
                                 )
@@ -244,11 +248,15 @@ fun RhymoApp() {
                                     downloadedSongs = downloadedSongs,
                                     playlists = playlists,
                                     onCreatePlaylist = savedMusicStore::createPlaylist,
+                                    onRenamePlaylist = savedMusicStore::renamePlaylist,
+                                    onDeletePlaylist = savedMusicStore::deletePlaylist,
+                                    onSongOptions = { optionsSong = it },
                                     openPlayer = openSong
                                 )
                                 AppTab.Notifications -> HomeScreen(
                                     songs = catalog,
                                     openPlayer = openSong,
+                                    onSongOptions = { optionsSong = it },
                                     openSearch = { tab = AppTab.Search },
                                     openNotifications = { NotificationFragment().show(activity.supportFragmentManager, NotificationFragment.TAG) },
                                     openProfile = { tab = AppTab.Profile }
@@ -259,6 +267,24 @@ fun RhymoApp() {
                     }
                 }
             }
+        }
+        optionsSong?.let { song ->
+            SongOptionsSheet(
+                song = song,
+                liked = song.id in likedSongIds,
+                saved = savedSongs.any { it.id == song.id },
+                downloaded = downloadedSongs.any { it.id == song.id },
+                downloading = song.id in downloadingSongIds,
+                downloadFailed = song.id in downloadFailures,
+                playlists = playlists,
+                onToggleLike = { savedMusicStore.toggleLiked(song) },
+                onToggleSave = { savedMusicStore.toggleSaved(song) },
+                onDownload = { savedMusicStore.download(song) },
+                onRemoveDownload = { savedMusicStore.removeDownload(song.id) },
+                onTogglePlaylist = { playlistId -> savedMusicStore.toggleSongInPlaylist(playlistId, song) },
+                onShare = { shareSong(activity, song) },
+                onDismiss = { optionsSong = null }
+            )
         }
     }
 }
@@ -390,6 +416,7 @@ private fun HomeScreen(
     modifier: Modifier = Modifier,
     songs: List<Song>,
     openPlayer: (Song, List<Song>) -> Unit,
+    onSongOptions: (Song) -> Unit,
     openSearch: () -> Unit,
     openNotifications: () -> Unit,
     openProfile: () -> Unit
@@ -405,9 +432,9 @@ private fun HomeScreen(
         item { Text("What should we play?", color = Muted); Spacer(Modifier.height(12.dp)); Surface(shape = RoundedCornerShape(20.dp), color = InkSoft, modifier = Modifier.fillMaxWidth().shadow(8.dp, RoundedCornerShape(20.dp), ambientColor = Violet.copy(.14f), spotColor = Violet.copy(.12f)).border(1.dp, MaterialTheme.colorScheme.primary.copy(.10f), RoundedCornerShape(20.dp)).clickable(onClick = openSearch)) { Row(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(34.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(.10f)), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) }; Spacer(Modifier.width(12.dp)); Text("Songs, artists, albums…", color = Muted) } } }
         item { Column { SectionTitle("TRENDING NOW", "See all"); Spacer(Modifier.height(6.dp)); Text("Pick a mood to tune your recommendations.", color = Muted, fontSize = 13.sp) } }
         item { LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(end = 12.dp)) { items(trendTags) { tag -> Chip(text = tag, selected = selectedTrend == tag, showHash = true) { selectedTrend = tag } } } }
-        item { FeaturedCard(songs.first(), openPlayer = { openPlayer(songs.first(), songs) }) }
+        item { FeaturedCard(songs.first(), openPlayer = { openPlayer(songs.first(), songs) }, onMoreClick = { onSongOptions(songs.first()) }) }
         item { SectionTitle("FRESH PICKS", "Updated today") }
-        musicItems(songs.drop(1)) { song -> openPlayer(song, songs) }
+        musicItems(songs.drop(1), onSongClick = { song -> openPlayer(song, songs) }, onMoreClick = onSongOptions)
     }
 }
 
@@ -416,7 +443,7 @@ private fun HomeScreen(
 @Composable private fun Chip(text: String, selected: Boolean = false, showHash: Boolean = false, onClick: () -> Unit = {}) = Surface(shape = RoundedCornerShape(50), color = if (selected) MaterialTheme.colorScheme.primary else InkSoft, modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(if (selected) .45f else .14f), RoundedCornerShape(50)).clickable(onClick = onClick)) { Row(Modifier.padding(horizontal = 15.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(7.dp).clip(CircleShape).background(if (selected) Brush.linearGradient(listOf(Color.White, Color.White)) else Brush.linearGradient(listOf(HotPink, MaterialTheme.colorScheme.primary)))); Spacer(Modifier.width(8.dp)); Text(if (showHash) "# $text" else text, color = if (selected) MaterialTheme.colorScheme.onPrimary else Paper, fontSize = 13.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) } }
 
 @Composable
-private fun FeaturedCard(song: Song, openPlayer: () -> Unit) {
+private fun FeaturedCard(song: Song, openPlayer: () -> Unit, onMoreClick: () -> Unit) {
     var saved by rememberSaveable(song.id) { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth().height(310.dp).shadow(14.dp, RoundedCornerShape(28.dp), ambientColor = HotPink.copy(.16f), spotColor = Violet.copy(.18f)).clip(RoundedCornerShape(28.dp)).background(Brush.linearGradient(song.colors)).clickable(onClick = openPlayer)) {
         if (song.artworkUrl != null) {
@@ -429,7 +456,10 @@ private fun FeaturedCard(song: Song, openPlayer: () -> Unit) {
             Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Black.copy(.08f), Color.Black.copy(.82f)))))
         }
         Box(Modifier.align(Alignment.TopStart).offset(x = (-35).dp, y = (-35).dp).size(150.dp).clip(CircleShape).border(24.dp, NeonBlue.copy(.18f), CircleShape))
-        Text("01", Modifier.align(Alignment.TopEnd).padding(22.dp), color = Color.White.copy(.45f), style = MaterialTheme.typography.headlineLarge)
+        Row(Modifier.align(Alignment.TopEnd).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("01", color = Color.White.copy(.45f), style = MaterialTheme.typography.headlineLarge)
+            IconButton(onClick = onMoreClick) { Icon(Icons.Filled.MoreVert, contentDescription = "More options for ${song.title}", tint = DarkPaper) }
+        }
         Column(Modifier.align(Alignment.BottomStart).padding(22.dp)) { Text("EDITOR'S PICK", color = Lime, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp); Text(song.title, color = DarkPaper, style = MaterialTheme.typography.headlineLarge); Text(song.artist, color = DarkPaper.copy(.78f)); Spacer(Modifier.height(7.dp)); Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.AutoMirrored.Filled.TrendingUp, contentDescription = null, tint = DarkPaper.copy(.72f), modifier = Modifier.size(15.dp)); Spacer(Modifier.width(6.dp)); Text("Trending · 18.4K saves", color = DarkPaper.copy(.68f), fontSize = 11.sp) }; Spacer(Modifier.height(14.dp)); Row(verticalAlignment = Alignment.CenterVertically) { Button(onClick = openPlayer, colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = DarkInk), shape = CircleShape) { Icon(Icons.Filled.PlayArrow, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Play now", fontWeight = FontWeight.Bold) }; Spacer(Modifier.width(10.dp)); IconButton(onClick = { saved = !saved }, modifier = Modifier.size(48.dp).background(Color.Black.copy(.26f), CircleShape).border(1.dp, Color.White.copy(.22f), CircleShape)) { Icon(if (saved) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder, contentDescription = if (saved) "Remove from saved" else "Save song", tint = if (saved) Lime else DarkPaper) } } }
     }
 }
@@ -438,7 +468,8 @@ private fun FeaturedCard(song: Song, openPlayer: () -> Unit) {
 private fun SearchScreen(
     modifier: Modifier = Modifier,
     popularSongs: List<Song>,
-    openPlayer: (Song, List<Song>) -> Unit
+    openPlayer: (Song, List<Song>) -> Unit,
+    onSongOptions: (Song) -> Unit
 ) {
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf(popularSongs) }
@@ -471,7 +502,7 @@ private fun SearchScreen(
         item { LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) { items(listOf("Arijit Singh", "Pop", "Indie", "Bollywood", "Punjabi")) { suggestion -> Chip(suggestion, selected = query.equals(suggestion, true)) { query = suggestion } } } }
         item { SectionTitle(if (query.isBlank()) "POPULAR RIGHT NOW" else if (loading) "SEARCHING…" else "${results.size} RESULTS", "") }
         if (!loading && searchError == null) {
-            musicItems(results) { song -> openPlayer(song, results) }
+            musicItems(results, onSongClick = { song -> openPlayer(song, results) }, onMoreClick = onSongOptions)
         }
         if (!loading && searchError != null) item {
             Surface(color = InkSoft, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
@@ -711,9 +742,8 @@ private fun PlayerPage(
                         playlists.forEach { playlist ->
                             val alreadyAdded = playlist.songs.any { it.id == song.id }
                             DropdownMenuItem(
-                                text = { Text(if (alreadyAdded) "In ${playlist.name}" else "Add to ${playlist.name}") },
-                                leadingIcon = { Icon(if (alreadyAdded) Icons.Filled.Check else Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null) },
-                                enabled = !alreadyAdded,
+                                text = { Text(if (alreadyAdded) "Remove from ${playlist.name}" else "Add to ${playlist.name}") },
+                                leadingIcon = { Icon(if (alreadyAdded) Icons.Filled.Remove else Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null) },
                                 onClick = {
                                     showPlayerMenu = false
                                     onAddToPlaylist(playlist.id)
@@ -796,6 +826,104 @@ private fun shareSong(context: Context, song: Song) {
     context.startActivity(Intent.createChooser(shareIntent, "Share song with friends"))
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SongOptionsSheet(
+    song: Song,
+    liked: Boolean,
+    saved: Boolean,
+    downloaded: Boolean,
+    downloading: Boolean,
+    downloadFailed: Boolean,
+    playlists: List<MusicPlaylist>,
+    onToggleLike: () -> Unit,
+    onToggleSave: () -> Unit,
+    onDownload: () -> Unit,
+    onRemoveDownload: () -> Unit,
+    onTogglePlaylist: (String) -> Unit,
+    onShare: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = 620.dp)
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(bottom = 18.dp)
+        ) {
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(62.dp).clip(RoundedCornerShape(16.dp)).background(Brush.linearGradient(song.colors)), contentAlignment = Alignment.Center) {
+                    if (song.artworkUrl != null) AsyncImage(song.artworkUrl, "${song.title} artwork", Modifier.matchParentSize(), contentScale = ContentScale.Crop)
+                    else Icon(Icons.Filled.MusicNote, contentDescription = null)
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(song.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(song.artist, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            SongSheetAction(if (liked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder, if (liked) "Remove from liked songs" else "Like song") { onToggleLike(); onDismiss() }
+            SongSheetAction(if (saved) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder, if (saved) "Remove from saved" else "Save to Library") { onToggleSave(); onDismiss() }
+            SongSheetAction(
+                icon = when { downloaded -> Icons.Filled.DeleteOutline; else -> Icons.Filled.Download },
+                label = when {
+                    downloaded -> "Remove offline download"
+                    downloading -> "Downloading…"
+                    downloadFailed -> "Retry download"
+                    else -> "Download for offline"
+                },
+                enabled = !downloading,
+                onClick = {
+                    if (downloaded) onRemoveDownload() else onDownload()
+                    onDismiss()
+                }
+            )
+            SongSheetAction(Icons.Outlined.Share, "Share with friends") { onDismiss(); onShare() }
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            Text("ADD TO PLAYLIST", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            if (playlists.isEmpty()) {
+                SongSheetAction(Icons.AutoMirrored.Filled.PlaylistAdd, "Create a playlist from Library", enabled = false) {}
+            } else {
+                playlists.forEach { playlist ->
+                    val inPlaylist = playlist.songs.any { it.id == song.id }
+                    SongSheetAction(
+                        icon = if (inPlaylist) Icons.Filled.Remove else Icons.AutoMirrored.Filled.PlaylistAdd,
+                        label = if (inPlaylist) "Remove from ${playlist.name}" else "Add to ${playlist.name}",
+                        onClick = { onTogglePlaylist(playlist.id); onDismiss() }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SongSheetAction(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = if (enabled) MaterialTheme.colorScheme.primary else Muted, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(16.dp))
+        Text(label, color = if (enabled) MaterialTheme.colorScheme.onSurface else Muted, fontWeight = FontWeight.Medium)
+    }
+}
+
 private fun contrastingContentColor(background: Color): Color =
     if (background.luminance() > .5f) DarkInk else Color.White
 
@@ -833,12 +961,18 @@ private fun LibraryScreen(
     downloadedSongs: List<Song>,
     playlists: List<MusicPlaylist>,
     onCreatePlaylist: (String) -> Unit,
+    onRenamePlaylist: (String, String) -> Unit,
+    onDeletePlaylist: (String) -> Unit,
+    onSongOptions: (Song) -> Unit,
     openPlayer: (Song, List<Song>) -> Unit
 ) {
     var page by rememberSaveable { mutableStateOf("overview") }
     var selectedPlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
     var showCreatePlaylist by rememberSaveable { mutableStateOf(false) }
     var playlistName by rememberSaveable { mutableStateOf("") }
+    var renamePlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
+    var renamePlaylistValue by rememberSaveable { mutableStateOf("") }
+    var deletePlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
 
     BackHandler(enabled = page != "overview") {
         page = "overview"
@@ -873,6 +1007,45 @@ private fun LibraryScreen(
         )
     }
 
+    renamePlaylistId?.let { playlistId ->
+        AlertDialog(
+            onDismissRequest = { renamePlaylistId = null },
+            title = { Text("Rename playlist") },
+            text = {
+                OutlinedTextField(
+                    value = renamePlaylistValue,
+                    onValueChange = { renamePlaylistValue = it.take(40) },
+                    label = { Text("Playlist name") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(enabled = renamePlaylistValue.isNotBlank(), onClick = {
+                    onRenamePlaylist(playlistId, renamePlaylistValue)
+                    renamePlaylistId = null
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { renamePlaylistId = null }) { Text("Cancel") } }
+        )
+    }
+
+    deletePlaylistId?.let { playlistId ->
+        val playlistNameToDelete = playlists.firstOrNull { it.id == playlistId }?.name ?: "this playlist"
+        AlertDialog(
+            onDismissRequest = { deletePlaylistId = null },
+            icon = { Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Delete playlist?") },
+            text = { Text("$playlistNameToDelete will be removed. Your songs and downloads will stay safe.") },
+            confirmButton = {
+                Button(
+                    onClick = { onDeletePlaylist(playlistId); deletePlaylistId = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { deletePlaylistId = null }) { Text("Cancel") } }
+        )
+    }
+
     when (page) {
         "liked" -> LibraryCollectionScreen(
             modifier = modifier,
@@ -883,6 +1056,7 @@ private fun LibraryScreen(
             emptyTitle = "No liked songs yet",
             emptyMessage = "Double-tap a song or tap the heart to add it here.",
             onBack = { page = "overview" },
+            onSongOptions = onSongOptions,
             openPlayer = openPlayer
         )
         "downloads" -> LibraryCollectionScreen(
@@ -894,6 +1068,7 @@ private fun LibraryScreen(
             emptyTitle = "Nothing downloaded",
             emptyMessage = "Open a song's three-dot menu and choose Download for offline.",
             onBack = { page = "overview" },
+            onSongOptions = onSongOptions,
             openPlayer = openPlayer
         )
         "playlist" -> {
@@ -907,6 +1082,7 @@ private fun LibraryScreen(
                 emptyTitle = "This playlist is empty",
                 emptyMessage = "From the player menu, add songs to this playlist.",
                 onBack = { page = "overview" },
+                onSongOptions = onSongOptions,
                 openPlayer = openPlayer
             )
         }
@@ -923,14 +1099,18 @@ private fun LibraryScreen(
             if (playlists.isNotEmpty()) {
                 item { Spacer(Modifier.height(4.dp)); SectionTitle("YOUR PLAYLISTS", "${playlists.size}") }
                 items(playlists, key = MusicPlaylist::id) { playlist ->
-                    LibraryCard(
-                        icon = Icons.AutoMirrored.Filled.QueueMusic,
-                        title = playlist.name,
-                        subtitle = "${playlist.songs.size} ${if (playlist.songs.size == 1) "track" else "tracks"}",
-                        color = NeonBlue,
-                        onClick = {
+                    PlaylistLibraryCard(
+                        playlist = playlist,
+                        onOpen = {
                             selectedPlaylistId = playlist.id
                             page = "playlist"
+                        },
+                        onRename = {
+                            renamePlaylistValue = playlist.name
+                            renamePlaylistId = playlist.id
+                        },
+                        onDelete = {
+                            deletePlaylistId = playlist.id
                         }
                     )
                 }
@@ -940,7 +1120,7 @@ private fun LibraryScreen(
             if (savedSongs.isEmpty()) {
                 item { LibraryEmptyState(Icons.Outlined.BookmarkBorder, "Nothing saved yet", "Tap Save on a song to keep it here.") }
             } else {
-                musicItems(savedSongs.take(4)) { song -> openPlayer(song, savedSongs) }
+                musicItems(savedSongs.take(4), onSongClick = { song -> openPlayer(song, savedSongs) }, onMoreClick = onSongOptions)
             }
         }
     }
@@ -956,6 +1136,7 @@ private fun LibraryCollectionScreen(
     emptyTitle: String,
     emptyMessage: String,
     onBack: () -> Unit,
+    onSongOptions: (Song) -> Unit,
     openPlayer: (Song, List<Song>) -> Unit
 ) {
     LazyColumn(
@@ -978,7 +1159,7 @@ private fun LibraryCollectionScreen(
         if (songs.isEmpty()) {
             item { LibraryEmptyState(emptyIcon, emptyTitle, emptyMessage) }
         } else {
-            musicItems(songs) { song -> openPlayer(song, songs) }
+            musicItems(songs, onSongClick = { song -> openPlayer(song, songs) }, onMoreClick = onSongOptions)
         }
     }
 }
@@ -993,6 +1174,49 @@ private fun LibraryEmptyState(icon: ImageVector, title: String, message: String)
             Spacer(Modifier.height(12.dp))
             Text(title, fontWeight = FontWeight.Bold)
             Text(message, color = Muted, fontSize = 13.sp, lineHeight = 18.sp)
+        }
+    }
+}
+
+@Composable
+private fun PlaylistLibraryCard(
+    playlist: MusicPlaylist,
+    onOpen: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Surface(
+        color = InkSoft,
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen)
+    ) {
+        Row(Modifier.fillMaxWidth().padding(start = 18.dp, top = 16.dp, bottom = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(NeonBlue), contentAlignment = Alignment.Center) {
+                Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, tint = DarkInk, modifier = Modifier.size(25.dp))
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(playlist.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${playlist.songs.size} ${if (playlist.songs.size == 1) "track" else "tracks"}", color = Muted, fontSize = 13.sp)
+            }
+            Box {
+                IconButton(onClick = { expanded = true }) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "More options for ${playlist.name}", tint = Muted)
+                }
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Rename") },
+                        leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                        onClick = { expanded = false; onRename() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                        onClick = { expanded = false; onDelete() }
+                    )
+                }
+            }
         }
     }
 }

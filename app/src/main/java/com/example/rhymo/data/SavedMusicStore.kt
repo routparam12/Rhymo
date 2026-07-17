@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.toArgb
 import com.rhymo.music.model.Song
 import java.io.File
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
@@ -121,11 +122,36 @@ class SavedMusicStore(context: Context) {
         _playlists.value = updated
     }
 
-    fun addToPlaylist(playlistId: String, song: Song) {
+    fun toggleSongInPlaylist(playlistId: String, song: Song) {
         val updated = _playlists.value.map { playlist ->
-            if (playlist.id != playlistId || playlist.songs.any { it.id == song.id }) playlist
+            if (playlist.id != playlistId) playlist
+            else if (playlist.songs.any { it.id == song.id }) playlist.copy(songs = playlist.songs.filterNot { it.id == song.id })
             else playlist.copy(songs = playlist.songs + song)
         }
+        preferences.edit().putString(KEY_PLAYLISTS, updated.toPlaylistsJson().toString()).apply()
+        _playlists.value = updated
+    }
+
+    fun removeDownload(songId: String) {
+        val downloadedSong = _downloadedSongs.value.firstOrNull { it.id == songId }
+        downloadedSong?.streamUrl?.let { localUrl ->
+            runCatching { File(URI(localUrl)).delete() }
+        }
+        val updated = _downloadedSongs.value.filterNot { it.id == songId }
+        persistSongs(KEY_DOWNLOADED_SONGS, updated)
+        _downloadedSongs.value = updated
+    }
+
+    fun renamePlaylist(playlistId: String, name: String) {
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) return
+        val updated = _playlists.value.map { if (it.id == playlistId) it.copy(name = cleanName) else it }
+        preferences.edit().putString(KEY_PLAYLISTS, updated.toPlaylistsJson().toString()).apply()
+        _playlists.value = updated
+    }
+
+    fun deletePlaylist(playlistId: String) {
+        val updated = _playlists.value.filterNot { it.id == playlistId }
         preferences.edit().putString(KEY_PLAYLISTS, updated.toPlaylistsJson().toString()).apply()
         _playlists.value = updated
     }
