@@ -12,6 +12,9 @@ import com.rhymo.music.ui.theme.NeonBlue
 import com.rhymo.music.ui.theme.Violet
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 object SaavnMusicRepository : MusicRepository {
     private val api: SaavnApi by lazy {
@@ -29,9 +32,16 @@ object SaavnMusicRepository : MusicRepository {
 
     override suspend fun search(query: String, page: Int, limit: Int): Result<List<Song>> = runCatching {
         require(query.isNotBlank()) { "Type a song or artist to search." }
-        val response = api.searchSongs(query.trim(), page.coerceAtLeast(0), limit.coerceIn(1, 40))
+        val safeLimit = limit.coerceIn(1, 40)
+        val normalizedQuery = query.trim()
+        val response = api.searchSongs(normalizedQuery, page.coerceAtLeast(0), safeLimit)
         check(response.success) { "The music service could not complete this search." }
-        response.data.orEmptyResults().mapNotNull(SaavnSongDto::toSong)
+        val directSongs = response.data.orEmptyResults().mapNotNull(SaavnSongDto::toSong)
+        if (directSongs.isNotEmpty()) return@runCatching directSongs
+
+        // The provider's /search/songs route intermittently returns an empty list even
+        // for valid queries. Its global search plus album-detail route remains usable.
+        globalAlbumFallback(api, normalizedQuery, safeLimit)
     }
 
     /** Provider suggestions currently fail for some valid IDs, so artist search is the resilient fallback. */
@@ -45,6 +55,34 @@ object SaavnMusicRepository : MusicRepository {
 
         return search(song.artist.substringBefore(',').ifBlank { song.title }, limit = limit)
             .map { related -> related.filterNot { it.id == song.id } }
+    }
+}
+
+private suspend fun globalAlbumFallback(api: SaavnApi, query: String, limit: Int): List<Song> {
+    val globalResponse = api.globalSearch(query)
+    check(globalResponse.success) { "The music service could not complete this search." }
+    val albumIds = globalResponse.data?.albums?.results.orEmpty()
+        .mapNotNull { it.id?.takeIf(String::isNotBlank) }
+        .distinct()
+        .take(6)
+    if (albumIds.isEmpty()) return emptyList()
+
+    return coroutineScope {
+        albumIds.map { albumId ->
+            async {
+                runCatching {
+                    api.albumDetails(albumId)
+                        .takeIf { it.success }
+                        ?.data
+                        ?.songs
+                        .orEmpty()
+                        .mapNotNull(SaavnSongDto::toSong)
+                }.getOrDefault(emptyList())
+            }
+        }.awaitAll()
+            .flatten()
+            .distinctBy(Song::id)
+            .take(limit)
     }
 }
 

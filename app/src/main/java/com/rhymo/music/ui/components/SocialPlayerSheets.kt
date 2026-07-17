@@ -2,6 +2,7 @@ package com.rhymo.music.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,12 +10,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -25,7 +28,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Lyrics
@@ -33,8 +35,6 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -42,12 +42,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +59,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -197,11 +203,13 @@ fun CommentsSheet(
     onDismiss: () -> Unit
 ) {
     var draft by remember(song.id) { mutableStateOf("") }
-    var menuCommentId by remember(song.id) { mutableStateOf<String?>(null) }
     var editingCommentId by remember(song.id) { mutableStateOf<String?>(null) }
     var editDraft by remember(song.id) { mutableStateOf("") }
     var deletingCommentId by remember(song.id) { mutableStateOf<String?>(null) }
-    val reactions = listOf("🔥", "💜", "🎧", "✨")
+    var footerHeightPx by remember(song.id) { mutableIntStateOf(0) }
+    val footerHeight = with(LocalDensity.current) { footerHeightPx.toDp() }
+    val haptics = LocalHapticFeedback.current
+    val reactions = listOf("❤️", "🙌", "🔥", "👏", "👍", "😍", "🙏", "😂")
 
     if (editingCommentId != null) {
         AlertDialog(
@@ -253,110 +261,181 @@ fun CommentsSheet(
         Column(
             Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(.88f)
+                .fillMaxHeight(.92f)
                 .imePadding()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp)
+                .widthIn(max = 720.dp)
         ) {
-            Text("Song conversation", style = MaterialTheme.typography.headlineSmall)
-            Text("React and talk about ${song.title}", color = Muted, fontSize = 13.sp)
-            Spacer(Modifier.height(14.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(reactions) { emoji ->
-                    val selected = conversation.selectedReaction == emoji
-                    Surface(
-                        color = if (selected) MaterialTheme.colorScheme.primary.copy(.18f) else InkSoft,
-                        shape = CircleShape,
-                        modifier = Modifier.clickable { onReact(emoji) }
-                    ) {
-                        Text(
-                            "$emoji ${conversation.reactionCounts[emoji] ?: 0}",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-                        )
-                    }
+            Box(
+                Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Comments", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(song.title, color = Muted, fontSize = 12.sp, maxLines = 1)
                 }
             }
-            HorizontalDivider(Modifier.padding(vertical = 14.dp))
+            HorizontalDivider()
+            Box(Modifier.weight(1f)) {
             if (conversation.comments.isEmpty()) {
-                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Start the conversation", fontWeight = FontWeight.Bold)
                         Text("Share what this song makes you feel.", color = Muted, fontSize = 13.sp)
                     }
                 }
             } else {
-                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        start = 18.dp,
+                        top = 18.dp,
+                        end = 18.dp,
+                        bottom = footerHeight + 18.dp
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
                     items(conversation.comments, key = { it.id }) { comment ->
-                        Surface(color = InkSoft, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
-                            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
-                                Box(
-                                    Modifier.size(34.dp).clip(CircleShape)
-                                        .background(Brush.linearGradient(listOf(HotPink, MaterialTheme.colorScheme.primary))),
-                                    contentAlignment = Alignment.Center
-                                ) { Text(comment.author.take(1).uppercase(), fontWeight = FontWeight.Black) }
-                                Spacer(Modifier.size(10.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(comment.author, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                    Text(comment.message, lineHeight = 20.sp)
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    onClick = {},
+                                    onLongClick = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        deletingCommentId = comment.id
+                                    }
+                                )
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(Brush.linearGradient(listOf(HotPink, MaterialTheme.colorScheme.primary))),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(comment.author.take(1).uppercase(), color = Paper, fontWeight = FontWeight.Black)
+                            }
+                            Spacer(Modifier.size(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(comment.author, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Spacer(Modifier.size(6.dp))
+                                    Text(relativeCommentTime(comment.createdAtEpochMs), color = Muted, fontSize = 12.sp)
                                 }
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Box {
-                                        IconButton(onClick = { menuCommentId = comment.id }, modifier = Modifier.size(38.dp)) {
-                                            Icon(Icons.Filled.MoreVert, contentDescription = "More options for comment", tint = Muted)
+                                Spacer(Modifier.height(2.dp))
+                                Text(comment.message, color = Paper, fontSize = 16.sp, lineHeight = 21.sp)
+                                Spacer(Modifier.height(7.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                                    Text(
+                                        "Reply",
+                                        color = Muted,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.clickable {
+                                            draft = "@${comment.author} "
                                         }
-                                        DropdownMenu(
-                                            expanded = menuCommentId == comment.id,
-                                            onDismissRequest = { menuCommentId = null }
-                                        ) {
-                                            DropdownMenuItem(
-                                                text = { Text("Edit") },
-                                                leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
-                                                onClick = {
-                                                    menuCommentId = null
-                                                    editDraft = comment.message
-                                                    editingCommentId = comment.id
-                                                }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                                                leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                                                onClick = {
-                                                    menuCommentId = null
-                                                    deletingCommentId = comment.id
-                                                }
-                                            )
+                                    )
+                                    Text(
+                                        "Edit",
+                                        color = Muted,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.clickable {
+                                            editDraft = comment.message
+                                            editingCommentId = comment.id
                                         }
-                                    }
-                                    IconButton(onClick = { onToggleCommentLike(comment.id) }, modifier = Modifier.size(38.dp)) {
-                                        Icon(
-                                            if (comment.likedByMe) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                            contentDescription = "Like comment",
-                                            tint = if (comment.likedByMe) HotPink else Muted
-                                        )
-                                    }
-                                    if (comment.likeCount > 0) Text(comment.likeCount.toString(), color = Muted, fontSize = 10.sp)
+                                    )
+                                }
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                IconButton(onClick = { onToggleCommentLike(comment.id) }, modifier = Modifier.size(40.dp)) {
+                                    Icon(
+                                        if (comment.likedByMe) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                        contentDescription = "Like comment",
+                                        tint = if (comment.likedByMe) HotPink else Muted,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                if (comment.likeCount > 0) {
+                                    Text(comment.likeCount.toString(), color = Muted, fontSize = 11.sp)
                                 }
                             }
                         }
                     }
                 }
             }
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it.take(280) },
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .onSizeChanged { footerHeightPx = it.height },
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 8.dp
+            ) {
+                Column {
+            HorizontalDivider()
+            LazyRow(
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Add a comment…") },
-                singleLine = true,
-                trailingIcon = {
-                    IconButton(
-                        enabled = draft.isNotBlank(),
-                        onClick = { onAddComment(listenerName, draft); draft = "" }
-                    ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Post comment") }
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(reactions) { emoji ->
+                    val selected = conversation.selectedReaction == emoji
+                    Surface(
+                        color = if (selected) MaterialTheme.colorScheme.primary.copy(.18f) else androidx.compose.ui.graphics.Color.Transparent,
+                        shape = CircleShape,
+                        modifier = Modifier.clickable { onReact(emoji) }
+                    ) {
+                        Text(emoji, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), fontSize = 25.sp)
+                    }
                 }
-            )
-            Spacer(Modifier.height(12.dp))
+            }
+            HorizontalDivider()
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier.size(42.dp).clip(CircleShape)
+                        .background(Brush.linearGradient(listOf(HotPink, MaterialTheme.colorScheme.primary))),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(listenerName.take(1).uppercase(), color = Paper, fontWeight = FontWeight.Black)
+                }
+                Spacer(Modifier.size(10.dp))
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it.take(280) },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Join the conversation…", maxLines = 1) },
+                    singleLine = true,
+                    shape = CircleShape,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = InkSoft,
+                        unfocusedContainerColor = InkSoft,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = Muted.copy(.35f)
+                    ),
+                    trailingIcon = {
+                        IconButton(
+                            enabled = draft.isNotBlank(),
+                            onClick = { onAddComment(listenerName, draft); draft = "" }
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Post comment",
+                                tint = if (draft.isNotBlank()) MaterialTheme.colorScheme.primary else Muted
+                            )
+                        }
+                    }
+                )
+            }
+                }
+            }
+            }
         }
     }
 }
@@ -404,3 +483,14 @@ fun RecommendationsSheet(
 }
 
 private fun SongLyrics?.orEmptyLines(): SongLyrics = this ?: SongLyrics(emptyList(), false)
+
+private fun relativeCommentTime(createdAtEpochMs: Long): String {
+    val elapsedSeconds = ((System.currentTimeMillis() - createdAtEpochMs).coerceAtLeast(0L) / 1_000L)
+    return when {
+        elapsedSeconds < 60 -> "${elapsedSeconds.coerceAtLeast(1)}s"
+        elapsedSeconds < 3_600 -> "${elapsedSeconds / 60}m"
+        elapsedSeconds < 86_400 -> "${elapsedSeconds / 3_600}h"
+        elapsedSeconds < 604_800 -> "${elapsedSeconds / 86_400}d"
+        else -> "${elapsedSeconds / 604_800}w"
+    }
+}
