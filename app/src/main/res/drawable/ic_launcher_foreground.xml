@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Dark record -->
+    <path android:fillColor="#FF0B0C0F" android:pathData="M54,22A32,32 0,1 1,54,86A32,32 0,1 1,54,22" />
+    <path android:fillColor="#FFD8FF5F" android:pathData="M54,47A7,7 0,1 1,54,61A7,7 0,1 1,54,47" />
+    <!-- Rhymo R-wave: stem, bowl and rising soundwave leg -->
+    <path android:fillColor="#FFF4F1E8" android:pathData="M39,36h16c10,0 16,5 16,14c0,7 -4,11 -10,13l12,12h-13L49,64v11H39zM49,45v11h6c4,0 6,-2 6,-6c0,-3 -2,-5 -6,-5z" />
+    <path android:fillColor="#FF43E7FF" android:pathData="M29,55c4,-7 8,-7 12,0c4,7 8,7 12,0c4,-7 8,-7 12,0c4,7 8,7 14,-1v7c-6,8 -12,8 -17,0c-4,-6 -7,-6 -11,0c-5,8 -11,8 -16,0c-2,-3 -4,-4 -6,-1z" />
+</vector>

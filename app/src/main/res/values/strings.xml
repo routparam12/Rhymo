@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Rhymo</string>
+    <string name="notification_title">Notifications</string>
+    <string name="auth_success">Signed in successfully</string>
+</resources>
