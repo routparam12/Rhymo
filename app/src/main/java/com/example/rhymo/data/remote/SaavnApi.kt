@@ -29,6 +29,7 @@ internal data class SaavnSongDto(
     val duration: Long? = null,
     val label: String? = null,
     val language: String? = null,
+    val url: String? = null,
     val album: SaavnAlbumDto? = null,
     val artists: SaavnArtistsDto? = null,
     val image: List<SaavnMediaUrlDto> = emptyList(),

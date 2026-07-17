@@ -1,7 +1,8 @@
 package com.rhymo.music
 
 import android.os.Bundle
-import android.app.Activity
+import android.content.Context
+import android.content.Intent
 import android.widget.Toast
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
@@ -11,12 +12,15 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -26,6 +30,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -41,6 +46,10 @@ import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -51,6 +60,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -67,6 +77,8 @@ import com.rhymo.music.auth.GoogleAuthService
 import com.rhymo.music.playback.rememberPlaybackController
 import com.rhymo.music.data.DemoMusicRepository
 import com.rhymo.music.data.SaavnMusicRepository
+import com.rhymo.music.data.SavedMusicStore
+import com.rhymo.music.data.MusicPlaylist
 import com.rhymo.music.model.Song
 import com.rhymo.music.ui.components.musicItems
 import com.rhymo.music.ui.navigation.AppDestination
@@ -80,7 +92,11 @@ import kotlinx.coroutines.delay
 import androidx.fragment.app.FragmentActivity
 import com.rhymo.music.notifications.NotificationFragment
 import androidx.core.net.toUri
+import androidx.palette.graphics.Palette
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.allowHardware
+import coil3.toBitmap
 
 private val fallbackSongs = DemoMusicRepository.songs
 
@@ -117,6 +133,14 @@ fun RhymoApp() {
     val activity = LocalContext.current as FragmentActivity
     val auth = remember(activity) { GoogleAuthService(activity) }
     val playbackController = rememberPlaybackController(activity)
+    val savedMusicStore = remember(activity) { SavedMusicStore(activity.applicationContext) }
+    val likedSongIds by savedMusicStore.likedSongIds.collectAsState()
+    val likedSongs by savedMusicStore.likedSongs.collectAsState()
+    val savedSongs by savedMusicStore.savedSongs.collectAsState()
+    val downloadedSongs by savedMusicStore.downloadedSongs.collectAsState()
+    val downloadingSongIds by savedMusicStore.downloadingSongIds.collectAsState()
+    val downloadFailures by savedMusicStore.downloadFailures.collectAsState()
+    val playlists by savedMusicStore.playlists.collectAsState()
     val scope = rememberCoroutineScope()
     var onboarded by remember { mutableStateOf(auth.currentUser() != null) }
     var signingIn by remember { mutableStateOf(false) }
@@ -201,9 +225,27 @@ fun RhymoApp() {
                                     songs = activeQueue,
                                     initialSongIndex = selectedSongIndex,
                                     controller = playbackController,
+                                    likedSongIds = likedSongIds,
+                                    savedSongIds = savedSongs.mapTo(mutableSetOf(), Song::id),
+                                    downloadedSongIds = downloadedSongs.mapTo(mutableSetOf(), Song::id),
+                                    downloadingSongIds = downloadingSongIds,
+                                    failedDownloadIds = downloadFailures,
+                                    playlists = playlists,
+                                    onToggleLike = savedMusicStore::toggleLiked,
+                                    onToggleSave = savedMusicStore::toggleSaved,
+                                    onDownload = savedMusicStore::download,
+                                    onAddToPlaylist = { playlistId, song -> savedMusicStore.addToPlaylist(playlistId, song) },
+                                    onShare = { shareSong(activity, it) },
                                     onClose = { tab = playerOrigin }
                                 )
-                                AppTab.Library -> LibraryScreen(songs = catalog, openPlayer = openSong)
+                                AppTab.Library -> LibraryScreen(
+                                    savedSongs = savedSongs,
+                                    likedSongs = likedSongs,
+                                    downloadedSongs = downloadedSongs,
+                                    playlists = playlists,
+                                    onCreatePlaylist = savedMusicStore::createPlaylist,
+                                    openPlayer = openSong
+                                )
                                 AppTab.Notifications -> HomeScreen(
                                     songs = catalog,
                                     openPlayer = openSong,
@@ -452,6 +494,17 @@ private fun SwipePlayer(
     songs: List<Song>,
     initialSongIndex: Int,
     controller: androidx.media3.session.MediaController?,
+    likedSongIds: Set<String>,
+    savedSongIds: Set<String>,
+    downloadedSongIds: Set<String>,
+    downloadingSongIds: Set<String>,
+    failedDownloadIds: Set<String>,
+    playlists: List<MusicPlaylist>,
+    onToggleLike: (Song) -> Unit,
+    onToggleSave: (Song) -> Unit,
+    onDownload: (Song) -> Unit,
+    onAddToPlaylist: (String, Song) -> Unit,
+    onShare: (Song) -> Unit,
     onClose: () -> Unit
 ) {
     val pager = rememberPagerState(initialPage = initialSongIndex.coerceIn(0, songs.lastIndex)) { songs.size }
@@ -476,19 +529,64 @@ private fun SwipePlayer(
             play()
         }
     }
-    VerticalPager(state = pager, modifier = Modifier.fillMaxSize()) { page -> PlayerPage(songs[page], controller, onClose) }
+    VerticalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
+        val song = songs[page]
+        PlayerPage(
+            song = song,
+            controller = controller,
+            liked = song.id in likedSongIds,
+            saved = song.id in savedSongIds,
+            downloaded = song.id in downloadedSongIds,
+            downloading = song.id in downloadingSongIds,
+            downloadFailed = song.id in failedDownloadIds,
+            playlists = playlists,
+            onToggleLike = { onToggleLike(song) },
+            onToggleSave = { onToggleSave(song) },
+            onDownload = { onDownload(song) },
+            onAddToPlaylist = { playlistId -> onAddToPlaylist(playlistId, song) },
+            onShare = { onShare(song) },
+            onClose = onClose
+        )
+    }
 }
 
 @Composable
-private fun PlayerPage(song: Song, controller: androidx.media3.session.MediaController?, onClose: () -> Unit) {
+private fun PlayerPage(
+    song: Song,
+    controller: androidx.media3.session.MediaController?,
+    liked: Boolean,
+    saved: Boolean,
+    downloaded: Boolean,
+    downloading: Boolean,
+    downloadFailed: Boolean,
+    playlists: List<MusicPlaylist>,
+    onToggleLike: () -> Unit,
+    onToggleSave: () -> Unit,
+    onDownload: () -> Unit,
+    onAddToPlaylist: (String) -> Unit,
+    onShare: () -> Unit,
+    onClose: () -> Unit
+) {
+    val context = LocalContext.current
+    val fallbackControlColor = remember(song.id) { song.colors.firstOrNull() ?: Violet }
     var playing by remember(controller) { mutableStateOf(controller?.isPlaying == true) }
-    var liked by rememberSaveable(song.id) { mutableStateOf(false) }
-    var saved by rememberSaveable(song.id) { mutableStateOf(false) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var seekFraction by remember { mutableFloatStateOf(0f) }
     var draggingSeek by remember { mutableStateOf(false) }
     var showPlayPause by remember { mutableStateOf(true) }
+    var showLikeBurst by remember(song.id) { mutableStateOf(false) }
+    var showPlayerMenu by remember { mutableStateOf(false) }
+    var extractedControlColor by remember(song.id) { mutableStateOf(fallbackControlColor) }
+    var extractedIconColor by remember(song.id) { mutableStateOf(contrastingContentColor(fallbackControlColor)) }
+    val controlColor by animateColorAsState(extractedControlColor, tween(650), label = "artwork control color")
+    val controlIconColor by animateColorAsState(extractedIconColor, tween(650), label = "artwork icon color")
+    val artworkRequest = remember(context, song.artworkUrl) {
+        ImageRequest.Builder(context)
+            .data(song.artworkUrl)
+            .allowHardware(false)
+            .build()
+    }
     val beat = rememberInfiniteTransition(label = "player beat").animateFloat(1f, 1.09f, infiniteRepeatable(tween(680), RepeatMode.Reverse), label = "beat")
     val interactionSource = remember { MutableInteractionSource() }
     val togglePlayback: () -> Unit = {
@@ -496,10 +594,20 @@ private fun PlayerPage(song: Song, controller: androidx.media3.session.MediaCont
         if (controller?.isPlaying == true) controller.pause() else controller?.play()
         Unit
     }
-    LaunchedEffect(showPlayPause, playing) {
-        if (showPlayPause && playing) {
-            delay(3_000)
+    val likeFromDoubleTap: () -> Unit = {
+        if (!liked) onToggleLike()
+        showLikeBurst = true
+    }
+    LaunchedEffect(showPlayPause) {
+        if (showPlayPause) {
+            delay(1_000)
             showPlayPause = false
+        }
+    }
+    LaunchedEffect(showLikeBurst) {
+        if (showLikeBurst) {
+            delay(700)
+            showLikeBurst = false
         }
     }
     DisposableEffect(controller) {
@@ -522,26 +630,174 @@ private fun PlayerPage(song: Song, controller: androidx.media3.session.MediaCont
             delay(250)
         }
     }
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(song.colors)).clickable(interactionSource = interactionSource, indication = null, onClick = togglePlayback)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(song.colors))
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = togglePlayback,
+                onDoubleClick = likeFromDoubleTap
+            )
+    ) {
         if (song.artworkUrl != null) {
             AsyncImage(
-                model = song.artworkUrl,
+                model = artworkRequest,
                 contentDescription = "${song.title} artwork",
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.matchParentSize().graphicsLayer { alpha = .52f }
+                modifier = Modifier.matchParentSize().graphicsLayer { alpha = .52f },
+                onSuccess = { success ->
+                    runCatching { success.result.image.toBitmap(width = 160, height = 160) }
+                        .getOrNull()
+                        ?.let { bitmap ->
+                            Palette.from(bitmap).maximumColorCount(16).generate { palette ->
+                                val swatch = palette?.dominantSwatch
+                                    ?: palette?.vibrantSwatch
+                                    ?: palette?.mutedSwatch
+                                if (swatch != null) {
+                                    extractedControlColor = Color(swatch.rgb)
+                                    extractedIconColor = Color(swatch.titleTextColor)
+                                }
+                            }
+                        }
+                }
             )
         }
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, DarkInk.copy(.18f), DarkInk.copy(.94f)))))
-        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = onClose, modifier = Modifier.size(44.dp).background(Color.Black.copy(.25f), CircleShape)) { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Close player", tint = DarkPaper) }; Spacer(Modifier.weight(1f)); IconButton(onClick = {}) { Icon(Icons.Filled.MoreVert, contentDescription = "More options", tint = DarkPaper) } }
-        AnimatedVisibility(visible = showPlayPause || !playing, modifier = Modifier.align(Alignment.Center), enter = fadeIn(tween(180)), exit = fadeOut(tween(280))) {
-            Box(Modifier.graphicsLayer { scaleX = if (playing) beat.value else 1f; scaleY = if (playing) beat.value else 1f }.size(76.dp).clip(CircleShape).background(Brush.linearGradient(listOf(HotPink.copy(.75f), Violet.copy(.75f)))).clickable(onClick = togglePlayback), contentAlignment = Alignment.Center) { Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = if (playing) "Pause" else "Play", tint = DarkPaper, modifier = Modifier.size(36.dp)) }
+        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onClose, modifier = Modifier.size(44.dp).background(Color.Black.copy(.25f), CircleShape)) {
+                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Close player", tint = DarkPaper)
+            }
+            Spacer(Modifier.weight(1f))
+            Box {
+                IconButton(onClick = { showPlayerMenu = true }) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "More options", tint = DarkPaper)
+                }
+                DropdownMenu(expanded = showPlayerMenu, onDismissRequest = { showPlayerMenu = false }) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                when {
+                                    downloaded -> "Available offline"
+                                    downloading -> "Downloading…"
+                                    downloadFailed -> "Retry download"
+                                    else -> "Download for offline"
+                                }
+                            )
+                        },
+                        leadingIcon = {
+                            if (downloading) {
+                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(if (downloaded) Icons.Filled.DownloadDone else Icons.Filled.Download, contentDescription = null)
+                            }
+                        },
+                        enabled = !downloaded && !downloading,
+                        onClick = {
+                            showPlayerMenu = false
+                            onDownload()
+                        }
+                    )
+                    HorizontalDivider()
+                    if (playlists.isEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text("Create a playlist in Library") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null) },
+                            enabled = false,
+                            onClick = {}
+                        )
+                    } else {
+                        playlists.forEach { playlist ->
+                            val alreadyAdded = playlist.songs.any { it.id == song.id }
+                            DropdownMenuItem(
+                                text = { Text(if (alreadyAdded) "In ${playlist.name}" else "Add to ${playlist.name}") },
+                                leadingIcon = { Icon(if (alreadyAdded) Icons.Filled.Check else Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null) },
+                                enabled = !alreadyAdded,
+                                onClick = {
+                                    showPlayerMenu = false
+                                    onAddToPlaylist(playlist.id)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        AnimatedVisibility(visible = showPlayPause, modifier = Modifier.align(Alignment.Center), enter = fadeIn(tween(140)), exit = fadeOut(tween(220))) {
+            Box(
+                Modifier
+                    .graphicsLayer {
+                        scaleX = if (playing) beat.value else 1f
+                        scaleY = if (playing) beat.value else 1f
+                    }
+                    .size(82.dp)
+                    .shadow(18.dp, CircleShape, ambientColor = controlColor.copy(.28f), spotColor = controlColor.copy(.58f))
+                    .clip(CircleShape)
+                    .background(
+                        Brush.radialGradient(
+                            listOf(controlColor.copy(alpha = .72f), controlColor)
+                        )
+                    )
+                    .border(1.5.dp, controlIconColor.copy(alpha = .32f), CircleShape)
+                    .clickable(onClick = togglePlayback),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (playing) "Pause" else "Play",
+                    tint = controlIconColor,
+                    modifier = Modifier.size(38.dp)
+                )
+            }
+        }
+        AnimatedVisibility(
+            visible = showLikeBurst,
+            modifier = Modifier.align(Alignment.Center),
+            enter = fadeIn(tween(100)) + scaleIn(tween(220), initialScale = .45f),
+            exit = fadeOut(tween(240)) + scaleOut(tween(240), targetScale = 1.25f)
+        ) {
+            Box(
+                Modifier
+                    .size(94.dp)
+                    .shadow(20.dp, CircleShape, spotColor = HotPink.copy(.55f))
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(.32f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.Favorite,
+                    contentDescription = "Song liked",
+                    tint = HotPink,
+                    modifier = Modifier.size(54.dp)
+                )
+            }
         }
         Row(Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.Bottom) {
-            Column(Modifier.weight(1f)) { Text(song.tag, color = Lime, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.2.sp); Spacer(Modifier.height(5.dp)); Text(song.title, color = DarkPaper, style = MaterialTheme.typography.headlineLarge, maxLines = 1, overflow = TextOverflow.Ellipsis); Text("${song.artist}  ·  Follow", color = DarkPaper.copy(.75f)); Spacer(Modifier.height(10.dp)); Slider(value = seekFraction, onValueChange = { draggingSeek = true; seekFraction = it }, onValueChangeFinished = { if (durationMs > 0) controller?.seekTo((durationMs * seekFraction).toLong()); draggingSeek = false }, modifier = Modifier.fillMaxWidth().height(32.dp), colors = SliderDefaults.colors(thumbColor = Lime, activeTrackColor = Lime, inactiveTrackColor = Color.White.copy(.22f))); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(formatPlaybackTime(if (draggingSeek) (durationMs * seekFraction).toLong() else positionMs), color = DarkMuted, fontSize = 11.sp); Text(formatPlaybackTime(durationMs), color = DarkMuted, fontSize = 11.sp) }; Text("Swipe up for the next track · Tap anywhere to pause", color = DarkPaper.copy(.6f), fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp)) }
-            Spacer(Modifier.width(18.dp)); Column(verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) { Action(if (liked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder, "18.4K", liked) { liked = !liked }; Action(if (saved) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder, "Save", saved) { saved = !saved }; Action(Icons.Outlined.Share, "Share") {} }
+            Column(Modifier.weight(1f)) { Text(song.tag, color = Lime, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.2.sp); Spacer(Modifier.height(5.dp)); Text(song.title, color = DarkPaper, style = MaterialTheme.typography.headlineLarge, maxLines = 1, overflow = TextOverflow.Ellipsis); Text("${song.artist}  ·  Follow", color = DarkPaper.copy(.75f)); Spacer(Modifier.height(10.dp)); Slider(value = seekFraction, onValueChange = { draggingSeek = true; seekFraction = it }, onValueChangeFinished = { if (durationMs > 0) controller?.seekTo((durationMs * seekFraction).toLong()); draggingSeek = false }, modifier = Modifier.fillMaxWidth().height(32.dp), colors = SliderDefaults.colors(thumbColor = Lime, activeTrackColor = Lime, inactiveTrackColor = Color.White.copy(.22f))); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(formatPlaybackTime(if (draggingSeek) (durationMs * seekFraction).toLong() else positionMs), color = DarkMuted, fontSize = 11.sp); Text(formatPlaybackTime(durationMs), color = DarkMuted, fontSize = 11.sp) }; Text("Swipe up · Tap to play/pause · Double-tap to like", color = DarkPaper.copy(.6f), fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp)) }
+            Spacer(Modifier.width(18.dp)); Column(verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) { Action(if (liked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder, if (liked) "Liked" else "Like", liked, onToggleLike); Action(if (saved) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder, if (saved) "Saved" else "Save", saved, onToggleSave); Action(Icons.Outlined.Share, "Share", onClick = onShare) }
         }
     }
 }
+
+private fun shareSong(context: Context, song: Song) {
+    val message = buildString {
+        append("Listen to ${song.title} by ${song.artist} on Rhymo")
+        (song.shareUrl ?: song.streamUrl).takeIf(String::isNotBlank)?.let {
+            append("\n")
+            append(it)
+        }
+    }
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "${song.title} — ${song.artist}")
+        putExtra(Intent.EXTRA_TEXT, message)
+    }
+    context.startActivity(Intent.createChooser(shareIntent, "Share song with friends"))
+}
+
+private fun contrastingContentColor(background: Color): Color =
+    if (background.luminance() > .5f) DarkInk else Color.White
 
 private fun formatPlaybackTime(milliseconds: Long): String {
     if (milliseconds <= 0L) return "0:00"
@@ -572,16 +828,172 @@ private fun BrandMark(size: androidx.compose.ui.unit.Dp) {
 @Composable
 private fun LibraryScreen(
     modifier: Modifier = Modifier,
-    songs: List<Song>,
+    savedSongs: List<Song>,
+    likedSongs: List<Song>,
+    downloadedSongs: List<Song>,
+    playlists: List<MusicPlaylist>,
+    onCreatePlaylist: (String) -> Unit,
     openPlayer: (Song, List<Song>) -> Unit
 ) {
-    LazyColumn(modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(start = 20.dp, top = 6.dp, end = 20.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item { Text("Your library", style = MaterialTheme.typography.headlineLarge); Text("The music you kept close.", color = Muted) }
-        item { Spacer(Modifier.height(8.dp)); LibraryCard(Icons.Filled.Favorite, "Liked songs", "48 tracks", Coral) }
-        item { LibraryCard(Icons.Filled.Download, "Downloads", "Listen offline", Violet) }
-        item { LibraryCard(Icons.Filled.Add, "Create a playlist", "Start something new", Lime) }
-        item { Spacer(Modifier.height(12.dp)); SectionTitle("RECENTLY SAVED", "See all") }
-        musicItems(songs.take(3)) { song -> openPlayer(song, songs) }
+    var page by rememberSaveable { mutableStateOf("overview") }
+    var selectedPlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showCreatePlaylist by rememberSaveable { mutableStateOf(false) }
+    var playlistName by rememberSaveable { mutableStateOf("") }
+
+    BackHandler(enabled = page != "overview") {
+        page = "overview"
+        selectedPlaylistId = null
+    }
+
+    if (showCreatePlaylist) {
+        AlertDialog(
+            onDismissRequest = { showCreatePlaylist = false },
+            icon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null) },
+            title = { Text("Create a playlist") },
+            text = {
+                OutlinedTextField(
+                    value = playlistName,
+                    onValueChange = { playlistName = it.take(40) },
+                    label = { Text("Playlist name") },
+                    placeholder = { Text("Late night drive") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(
+                    enabled = playlistName.isNotBlank(),
+                    onClick = {
+                        onCreatePlaylist(playlistName)
+                        playlistName = ""
+                        showCreatePlaylist = false
+                    }
+                ) { Text("Create") }
+            },
+            dismissButton = { TextButton(onClick = { showCreatePlaylist = false }) { Text("Cancel") } }
+        )
+    }
+
+    when (page) {
+        "liked" -> LibraryCollectionScreen(
+            modifier = modifier,
+            title = "Liked songs",
+            subtitle = "${likedSongs.size} tracks you love",
+            songs = likedSongs,
+            emptyIcon = Icons.Outlined.FavoriteBorder,
+            emptyTitle = "No liked songs yet",
+            emptyMessage = "Double-tap a song or tap the heart to add it here.",
+            onBack = { page = "overview" },
+            openPlayer = openPlayer
+        )
+        "downloads" -> LibraryCollectionScreen(
+            modifier = modifier,
+            title = "Downloads",
+            subtitle = "Available without internet",
+            songs = downloadedSongs,
+            emptyIcon = Icons.Outlined.Download,
+            emptyTitle = "Nothing downloaded",
+            emptyMessage = "Open a song's three-dot menu and choose Download for offline.",
+            onBack = { page = "overview" },
+            openPlayer = openPlayer
+        )
+        "playlist" -> {
+            val playlist = playlists.firstOrNull { it.id == selectedPlaylistId }
+            LibraryCollectionScreen(
+                modifier = modifier,
+                title = playlist?.name ?: "Playlist",
+                subtitle = "${playlist?.songs?.size ?: 0} tracks",
+                songs = playlist?.songs.orEmpty(),
+                emptyIcon = Icons.AutoMirrored.Outlined.QueueMusic,
+                emptyTitle = "This playlist is empty",
+                emptyMessage = "From the player menu, add songs to this playlist.",
+                onBack = { page = "overview" },
+                openPlayer = openPlayer
+            )
+        }
+        else -> LazyColumn(
+            modifier.fillMaxSize().statusBarsPadding(),
+            contentPadding = PaddingValues(start = 20.dp, top = 6.dp, end = 20.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item { Text("Your library", style = MaterialTheme.typography.headlineLarge); Text("Everything you liked, saved, and made.", color = Muted) }
+            item { Spacer(Modifier.height(8.dp)); LibraryCard(Icons.Filled.Favorite, "Liked songs", "${likedSongs.size} ${if (likedSongs.size == 1) "track" else "tracks"}", Coral) { page = "liked" } }
+            item { LibraryCard(Icons.Filled.Download, "Downloads", "${downloadedSongs.size} available offline", Violet) { page = "downloads" } }
+            item { LibraryCard(Icons.AutoMirrored.Filled.PlaylistAdd, "Create a playlist", "Build your own mix", Lime) { showCreatePlaylist = true } }
+
+            if (playlists.isNotEmpty()) {
+                item { Spacer(Modifier.height(4.dp)); SectionTitle("YOUR PLAYLISTS", "${playlists.size}") }
+                items(playlists, key = MusicPlaylist::id) { playlist ->
+                    LibraryCard(
+                        icon = Icons.AutoMirrored.Filled.QueueMusic,
+                        title = playlist.name,
+                        subtitle = "${playlist.songs.size} ${if (playlist.songs.size == 1) "track" else "tracks"}",
+                        color = NeonBlue,
+                        onClick = {
+                            selectedPlaylistId = playlist.id
+                            page = "playlist"
+                        }
+                    )
+                }
+            }
+
+            item { Spacer(Modifier.height(4.dp)); SectionTitle("RECENTLY SAVED", if (savedSongs.isEmpty()) "" else "${savedSongs.size}") }
+            if (savedSongs.isEmpty()) {
+                item { LibraryEmptyState(Icons.Outlined.BookmarkBorder, "Nothing saved yet", "Tap Save on a song to keep it here.") }
+            } else {
+                musicItems(savedSongs.take(4)) { song -> openPlayer(song, savedSongs) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryCollectionScreen(
+    modifier: Modifier,
+    title: String,
+    subtitle: String,
+    songs: List<Song>,
+    emptyIcon: ImageVector,
+    emptyTitle: String,
+    emptyMessage: String,
+    onBack: () -> Unit,
+    openPlayer: (Song, List<Song>) -> Unit
+) {
+    LazyColumn(
+        modifier.fillMaxSize().statusBarsPadding(),
+        contentPadding = PaddingValues(start = 20.dp, top = 6.dp, end = 20.dp, bottom = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack, modifier = Modifier.size(44.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to library")
+                }
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text(title, style = MaterialTheme.typography.headlineLarge)
+                    Text(subtitle, color = Muted, fontSize = 13.sp)
+                }
+            }
+        }
+        if (songs.isEmpty()) {
+            item { LibraryEmptyState(emptyIcon, emptyTitle, emptyMessage) }
+        } else {
+            musicItems(songs) { song -> openPlayer(song, songs) }
+        }
+    }
+}
+
+@Composable
+private fun LibraryEmptyState(icon: ImageVector, title: String, message: String) {
+    Surface(color = InkSoft, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 24.dp, vertical = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(58.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(.10f)), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(title, fontWeight = FontWeight.Bold)
+            Text(message, color = Muted, fontSize = 13.sp, lineHeight = 18.sp)
+        }
     }
 }
 

@@ -29,11 +29,14 @@ Build a polished, interactive Android experience and connect the first functiona
 - Retrofit/Gson response mapping with highest-quality available artwork and 320 kbps stream selection
 - Media3 audio streaming, background playback, media controls, seek synchronization, and media notification metadata
 - Local demo catalog fallback when the discovery request is unavailable
+- Persistent on-device likes and saved-song library with playable metadata
+- Offline track downloads stored in app-private storage and playable from Library
+- Persistent user-created playlists with add-from-player workflow
+- Android share sheet with song title, artist, and provider link
 
 ### Still deferred
 
 - Licensed production catalog and music-rights agreements
-- Offline downloads
 - Synced likes, playlists, history, and recommendations
 - Sharing deep links and artist/song detail pages
 

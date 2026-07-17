@@ -55,7 +55,8 @@ private fun SaavnSongDto.toSong(): Song? {
         duration = duration.toDurationLabel(),
         streamUrl = stream,
         artworkUrl = image.bestUrl(preferredQuality = "500x500"),
-        album = album?.name?.decodeEntities()
+        album = album?.name?.decodeEntities(),
+        shareUrl = url
     )
 }
 
