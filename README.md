@@ -39,7 +39,7 @@ Rhymo has no Premium tier, subscription, locked audio quality, paid downloads, o
 | Lyrics | Functional when available | Timed/plain lyrics from LRCLIB |
 | Comments and reactions | Functional locally | Not shared between users or devices yet |
 | Artist following | Functional locally | Stored on the device |
-| Deep links | Functional | `rhymo://listen?room=…` joins a shared listening room |
+| Deep links | Functional | `https://rhymo-aeefd.web.app/listen?room=…` opens a shared listening room from messaging apps |
 | Production music licensing | Required | Must be completed before distribution |
 
 ## Tech stack

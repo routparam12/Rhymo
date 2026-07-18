@@ -12,5 +12,5 @@ data class ListeningRoom(
     val revision: Long = 0L
 ) {
     val shareLink: String
-        get() = "rhymo://listen?room=$id"
+        get() = "https://rhymo-aeefd.web.app/listen?room=$id"
 }

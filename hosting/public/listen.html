@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#17131f" />
+    <title>Listen Together on Rhymo</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, -apple-system, sans-serif; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at top, #6b39d8, #17131f 55%); color: white; }
+      main { width: min(86vw, 420px); padding: 36px 28px; border: 1px solid #ffffff2b; border-radius: 28px; background: #211a2ee8; box-shadow: 0 24px 60px #0008; text-align: center; }
+      .logo { width: 64px; height: 64px; display: grid; place-items: center; margin: auto; border-radius: 20px; background: linear-gradient(135deg, #c144ee, #ff547e); font-size: 34px; font-weight: 900; }
+      h1 { margin: 22px 0 10px; font-size: 29px; }
+      p { color: #d2cbdc; line-height: 1.5; }
+      a { display: block; margin-top: 26px; padding: 16px 20px; border-radius: 999px; background: #caff43; color: #17131f; font-weight: 800; text-decoration: none; }
+      #invalid { display: none; color: #ff9caa; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="logo">R</div>
+      <h1>Listen Together</h1>
+      <p id="message">Your friend invited you to a live listening room on Rhymo.</p>
+      <p id="invalid">This room link is incomplete or invalid.</p>
+      <a id="open" href="#">Open in Rhymo</a>
+    </main>
+    <script>
+      const room = new URLSearchParams(window.location.search).get("room")?.trim();
+      const valid = room && /^[A-Za-z0-9_-]{8,}$/.test(room);
+      const openButton = document.getElementById("open");
+      if (valid) {
+        openButton.href = `rhymo://listen?room=${encodeURIComponent(room)}`;
+      } else {
+        document.getElementById("message").style.display = "none";
+        document.getElementById("invalid").style.display = "block";
+        openButton.style.display = "none";
+      }
+    </script>
+  </body>
+</html>

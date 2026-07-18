@@ -36,7 +36,7 @@ The first UI phase still supports **Preview as guest**. Firestore rules above re
 ## User flow
 
 1. Open any song and use **⋮ → Listen together**.
-2. Rhymo creates a room and opens Android's share sheet with a `rhymo://listen?room=…` link.
+2. Rhymo creates a room and opens Android's share sheet with a clickable `https://rhymo-aeefd.web.app/listen?room=…` link.
 3. The recipient opens the link in Rhymo. The song loads at the host's current position.
 4. The host controls play, pause and seek. Guests stay synced and see the host status chip.
 

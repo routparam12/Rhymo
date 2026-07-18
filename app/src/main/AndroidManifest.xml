@@ -27,6 +27,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.Rhymo"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -44,6 +45,20 @@
                 <data
                     android:host="listen"
                     android:scheme="rhymo" />
+            </intent-filter>
+            <!-- WhatsApp and other messengers recognize HTTPS links. If Android
+                 does not open the app directly, the hosted page offers an
+                 explicit button that falls back to the rhymo:// URI above. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="rhymo-aeefd.web.app"
+                    android:pathPrefix="/listen"
+                    android:scheme="https" />
             </intent-filter>
         </activity>
     </application>

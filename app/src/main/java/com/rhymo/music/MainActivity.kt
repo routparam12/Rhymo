@@ -155,7 +155,10 @@ class MainActivity : FragmentActivity() {
 }
 
 private fun Intent?.listenTogetherRoomId(): String? = this?.data
-    ?.takeIf { it.scheme == "rhymo" && it.host == "listen" }
+    ?.takeIf { uri ->
+        (uri.scheme == "rhymo" && uri.host == "listen") ||
+            (uri.scheme == "https" && uri.host == "rhymo-aeefd.web.app" && uri.path == "/listen")
+    }
     ?.getQueryParameter("room")
     ?.trim()
     ?.takeIf { it.isNotEmpty() }
