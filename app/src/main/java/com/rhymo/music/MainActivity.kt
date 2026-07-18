@@ -613,6 +613,7 @@ private fun WelcomeScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeScreen(
     modifier: Modifier = Modifier,
@@ -629,6 +630,47 @@ private fun HomeScreen(
     val trendingPagerState = rememberPagerState { trendingSongs.size }
     val currentDateLabel = rememberCurrentDateLabel()
     var selectedTrend by rememberSaveable { mutableStateOf(trendTags.first()) }
+    var showAllTrending by rememberSaveable { mutableStateOf(false) }
+
+    if (showAllTrending) {
+        ModalBottomSheet(
+            onDismissRequest = { showAllTrending = false },
+            containerColor = Ink,
+            contentColor = Paper
+        ) {
+            Column(Modifier.fillMaxWidth()) {
+                Text(
+                    "Trending now",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(horizontal = 20.dp)
+                )
+                Text(
+                    "${songs.size} songs picked for you",
+                    color = Muted,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+                )
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 620.dp),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    musicItems(
+                        songs = songs,
+                        onSongClick = { song ->
+                            showAllTrending = false
+                            openPlayer(song, songs)
+                        },
+                        onMoreClick = { song ->
+                            showAllTrending = false
+                            onSongOptions(song)
+                        }
+                    )
+                }
+            }
+        }
+    }
+
     LazyColumn(
         modifier.fillMaxSize().statusBarsPadding(),
         contentPadding = PaddingValues(start = 20.dp, top = 3.dp, end = 20.dp, bottom = 20.dp),
@@ -636,7 +678,7 @@ private fun HomeScreen(
     ) {
         item { Row(verticalAlignment = Alignment.CenterVertically) { BrandMark(48.dp); Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) { Text(currentDateLabel, color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp); Text("Hey, listener.", style = MaterialTheme.typography.headlineLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) }; Spacer(Modifier.width(10.dp)); NotificationButton(openNotifications); Spacer(Modifier.width(10.dp)); Box(Modifier.size(48.dp).clip(CircleShape).background(Brush.linearGradient(listOf(HotPink, Violet))).clickable(onClick = openProfile), contentAlignment = Alignment.Center) { Text("V", color = DarkInk, fontWeight = FontWeight.Bold) } } }
         item { Text("What should we play?", color = Muted); Spacer(Modifier.height(12.dp)); Surface(shape = RoundedCornerShape(20.dp), color = InkSoft, modifier = Modifier.fillMaxWidth().shadow(8.dp, RoundedCornerShape(20.dp), ambientColor = Violet.copy(.14f), spotColor = Violet.copy(.12f)).border(1.dp, MaterialTheme.colorScheme.primary.copy(.10f), RoundedCornerShape(20.dp)).clickable(onClick = openSearch)) { Row(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(34.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(.10f)), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) }; Spacer(Modifier.width(12.dp)); Text("Songs, artists, albums…", color = Muted) } } }
-        item { Column { SectionTitle("TRENDING NOW", "See all"); Spacer(Modifier.height(6.dp)); Text("Pick a mood to tune your recommendations.", color = Muted, fontSize = 13.sp) } }
+        item { Column { SectionTitle("TRENDING NOW", "See all", onTrailingClick = { showAllTrending = true }); Spacer(Modifier.height(6.dp)); Text("Pick a mood to tune your recommendations.", color = Muted, fontSize = 13.sp) } }
         item { LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(end = 12.dp)) { items(trendTags) { tag -> Chip(text = tag, selected = selectedTrend == tag, showHash = true) { selectedTrend = tag; onMoodSelected(tag) } } } }
         if (trendingSongs.isNotEmpty()) item {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -704,7 +746,43 @@ private fun formatCurrentDate(): String {
         .uppercase(locale)
 }
 
-@Composable private fun SectionTitle(title: String, trailing: String) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.width(4.dp).height(22.dp).clip(CircleShape).background(Brush.verticalGradient(listOf(HotPink, MaterialTheme.colorScheme.primary)))); Spacer(Modifier.width(10.dp)); Text(title, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp) }; if (trailing.isNotEmpty()) Surface(color = MaterialTheme.colorScheme.primary.copy(.08f), shape = CircleShape) { Text(trailing, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp)) } }
+@Composable
+private fun SectionTitle(
+    title: String,
+    trailing: String,
+    onTrailingClick: (() -> Unit)? = null
+) = Row(
+    Modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.CenterVertically
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .width(4.dp)
+                .height(22.dp)
+                .clip(CircleShape)
+                .background(Brush.verticalGradient(listOf(HotPink, MaterialTheme.colorScheme.primary)))
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(title, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
+    }
+    if (trailing.isNotEmpty()) {
+        Surface(
+            color = MaterialTheme.colorScheme.primary.copy(.08f),
+            shape = CircleShape,
+            modifier = if (onTrailingClick != null) Modifier.clickable(onClick = onTrailingClick) else Modifier
+        ) {
+            Text(
+                trailing,
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp)
+            )
+        }
+    }
+}
 
 @Composable private fun Chip(text: String, selected: Boolean = false, showHash: Boolean = false, onClick: () -> Unit = {}) = Surface(shape = RoundedCornerShape(50), color = if (selected) MaterialTheme.colorScheme.primary else InkSoft, modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(if (selected) .45f else .14f), RoundedCornerShape(50)).clickable(onClick = onClick)) { Row(Modifier.padding(horizontal = 15.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(7.dp).clip(CircleShape).background(if (selected) Brush.linearGradient(listOf(Color.White, Color.White)) else Brush.linearGradient(listOf(HotPink, MaterialTheme.colorScheme.primary)))); Spacer(Modifier.width(8.dp)); Text(if (showHash) "# $text" else text, color = if (selected) MaterialTheme.colorScheme.onPrimary else Paper, fontSize = 13.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) } }
 
