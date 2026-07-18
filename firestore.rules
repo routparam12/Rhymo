@@ -10,6 +10,41 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['isPlaying', 'positionMs', 'updatedAtEpochMs', 'revision']);
       allow delete: if false;
+
+      match /participants/{participantId} {
+        allow read: if request.auth != null;
+        allow create, update: if request.auth != null
+          && request.auth.uid == participantId
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.isHost ==
+            (request.auth.uid == get(/databases/$(database)/documents/listeningRooms/$(roomId)).data.hostId);
+        allow delete: if request.auth != null
+          && (request.auth.uid == participantId
+            || request.auth.uid == get(/databases/$(database)/documents/listeningRooms/$(roomId)).data.hostId);
+      }
+
+      match /messages/{messageId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+          && exists(/databases/$(database)/documents/listeningRooms/$(roomId)/participants/$(request.auth.uid))
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.message is string
+          && request.resource.data.message.size() > 0
+          && request.resource.data.message.size() <= 500;
+        allow update, delete: if request.auth != null
+          && resource.data.authorId == request.auth.uid;
+      }
+
+      match /reactions/{reactionId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+          && exists(/databases/$(database)/documents/listeningRooms/$(roomId)/participants/$(request.auth.uid))
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.emoji in ['❤️', '🙌', '🔥', '👏', '😍', '🎶'];
+        allow update: if false;
+        allow delete: if request.auth != null
+          && resource.data.authorId == request.auth.uid;
+      }
     }
   }
 }

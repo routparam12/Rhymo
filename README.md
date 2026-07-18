@@ -156,6 +156,8 @@ The bottom navigation contains Home, Search, and Library. The immersive player o
 3. When they open it in Rhymo, the same track starts at the host's current position.
 4. Host play, pause, and seek actions synchronize in real time. Guests can still like, save, comment, and share without interrupting the host.
 
+Live rooms also show the participant count and host/guest roles, announce when friends join, identify who added the active song, support room chat, and display real-time emoji reactions over the artwork.
+
 Each phone streams the track directly from the music provider—Rhymo synchronizes playback state only and never relays audio.
 
 The center play/pause indicator automatically disappears after one second. The player loads the queue into Media3 once and changes tracks after the pager settles, reducing unnecessary rebuffering and UI jank.

@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -85,6 +86,9 @@ import com.rhymo.music.data.SocialMusicStore
 import com.rhymo.music.data.ListeningRoomStore
 import com.rhymo.music.data.MusicPlaylist
 import com.rhymo.music.model.ListeningRoom
+import com.rhymo.music.model.ListeningParticipant
+import com.rhymo.music.model.RoomMessage
+import com.rhymo.music.model.RoomReaction
 import com.rhymo.music.model.Song
 import com.rhymo.music.model.SongConversation
 import com.rhymo.music.ui.components.CommentsSheet
@@ -165,7 +169,7 @@ private fun Intent?.listenTogetherRoomId(): String? = this?.data
 
 private typealias AppTab = AppDestination
 private val navigationTabs = TopLevelDestinations
-private enum class PlayerSheet { Lyrics, Comments, Recommendations }
+private enum class PlayerSheet { Lyrics, Comments, Recommendations, LiveRoom }
 
 @Composable
 fun RhymoApp(
@@ -188,6 +192,9 @@ fun RhymoApp(
     val followedArtists by socialMusicStore.followedArtists.collectAsState()
     val conversations by socialMusicStore.conversations.collectAsState()
     val listeningRoom by listeningRoomStore.room.collectAsState()
+    val roomParticipants by listeningRoomStore.participants.collectAsState()
+    val roomMessages by listeningRoomStore.messages.collectAsState()
+    val roomReactions by listeningRoomStore.reactions.collectAsState()
     val scope = rememberCoroutineScope()
     var onboarded by remember { mutableStateOf(auth.currentUser() != null) }
     var signingIn by remember { mutableStateOf(false) }
@@ -203,6 +210,7 @@ fun RhymoApp(
     var pendingRoomStartSong by remember { mutableStateOf<Song?>(null) }
     var listenTogetherError by remember { mutableStateOf<String?>(null) }
     var creatingListeningRoom by remember { mutableStateOf(false) }
+    var joinedParticipantNotice by remember { mutableStateOf<ListeningParticipant?>(null) }
 
     fun startListeningTogether(song: Song) {
         if (creatingListeningRoom) return
@@ -218,6 +226,7 @@ fun RhymoApp(
             val result = listeningRoomStore.startRoom(
                 song = song,
                 hostName = auth.currentUser()?.displayName ?: "Rhymo listener",
+                hostAvatarUrl = auth.currentUser()?.photoUrl?.toString(),
                 isPlaying = playerHasSong && playbackController?.isPlaying == true,
                 positionMs = if (playerHasSong) playbackController?.currentPosition ?: 0L else 0L
             )
@@ -248,7 +257,11 @@ fun RhymoApp(
             onboarded = false
             return@LaunchedEffect
         }
-        listeningRoomStore.joinRoom(roomId)
+        listeningRoomStore.joinRoom(
+            roomId = roomId,
+            listenerName = auth.currentUser()?.displayName ?: "Rhymo listener",
+            listenerAvatarUrl = auth.currentUser()?.photoUrl?.toString()
+        )
             .onSuccess { room ->
                 activeQueue = listOf(room.song)
                 selectedSongIndex = 0
@@ -259,6 +272,22 @@ fun RhymoApp(
                 listenTogetherError = error.toListenTogetherMessage()
             }
         onIncomingRoomHandled()
+    }
+
+    LaunchedEffect(listeningRoomStore) {
+        listeningRoomStore.participantJoined.collect { participant ->
+            joinedParticipantNotice = participant
+            delay(3_000L)
+            if (joinedParticipantNotice?.id == participant.id) joinedParticipantNotice = null
+        }
+    }
+
+    LaunchedEffect(listeningRoom?.id) {
+        if (listeningRoom == null) return@LaunchedEffect
+        while (currentCoroutineContext().isActive) {
+            listeningRoomStore.heartbeat()
+            delay(30_000L)
+        }
     }
 
     LaunchedEffect(onboarded) {
@@ -405,6 +434,10 @@ fun RhymoApp(
                                         followedArtists = followedArtists,
                                         conversations = conversations,
                                         listeningRoom = listeningRoom,
+                                        roomParticipants = roomParticipants,
+                                        roomMessages = roomMessages,
+                                        roomReactions = roomReactions,
+                                        joinedParticipantNotice = joinedParticipantNotice,
                                         listenerId = listeningRoomStore.listenerId,
                                         listenerName = auth.currentUser()?.displayName ?: "Rhymo listener",
                                         listenerAvatarUrl = auth.currentUser()?.photoUrl?.toString(),
@@ -428,6 +461,19 @@ fun RhymoApp(
                                         onShareListeningRoom = { room -> shareListeningRoom(activity, room) },
                                         onLeaveListeningRoom = listeningRoomStore::leaveRoom,
                                         onPublishListeningState = listeningRoomStore::publishPlayback,
+                                        onSendRoomReaction = { emoji ->
+                                            listeningRoomStore.sendReaction(
+                                                emoji,
+                                                auth.currentUser()?.displayName ?: "Rhymo listener"
+                                            )
+                                        },
+                                        onSendRoomMessage = { message ->
+                                            listeningRoomStore.sendMessage(
+                                                message = message,
+                                                authorName = auth.currentUser()?.displayName ?: "Rhymo listener",
+                                                authorAvatarUrl = auth.currentUser()?.photoUrl?.toString()
+                                            )
+                                        },
                                         onClose = { tab = playerOrigin }
                                     )
                                 }
@@ -936,6 +982,10 @@ private fun SwipePlayer(
     followedArtists: Set<String>,
     conversations: Map<String, SongConversation>,
     listeningRoom: ListeningRoom?,
+    roomParticipants: List<ListeningParticipant>,
+    roomMessages: List<RoomMessage>,
+    roomReactions: List<RoomReaction>,
+    joinedParticipantNotice: ListeningParticipant?,
     listenerId: String,
     listenerName: String,
     listenerAvatarUrl: String?,
@@ -956,6 +1006,8 @@ private fun SwipePlayer(
     onShareListeningRoom: (ListeningRoom) -> Unit,
     onLeaveListeningRoom: () -> Unit,
     onPublishListeningState: (ListeningRoom, Boolean, Long) -> Unit,
+    onSendRoomReaction: (String) -> Unit,
+    onSendRoomMessage: (String) -> Unit,
     onClose: () -> Unit
 ) {
     val pager = rememberPagerState(initialPage = initialSongIndex.coerceIn(0, songs.lastIndex)) { songs.size }
@@ -1024,6 +1076,10 @@ private fun SwipePlayer(
             followed = followedArtists.any { it.equals(song.artist, ignoreCase = true) },
             conversation = conversations[song.id] ?: SongConversation(),
             listeningRoom = listeningRoom?.takeIf { it.song.id == song.id },
+            roomParticipants = roomParticipants,
+            roomMessages = roomMessages,
+            roomReactions = roomReactions,
+            joinedParticipantNotice = joinedParticipantNotice,
             listenerId = listenerId,
             listenerName = listenerName,
             listenerAvatarUrl = listenerAvatarUrl,
@@ -1045,6 +1101,8 @@ private fun SwipePlayer(
             onStartListeningTogether = { onStartListeningTogether(song) },
             onShareListeningRoom = onShareListeningRoom,
             onLeaveListeningRoom = onLeaveListeningRoom,
+            onSendRoomReaction = onSendRoomReaction,
+            onSendRoomMessage = onSendRoomMessage,
             onClose = onClose
         )
     }
@@ -1119,6 +1177,10 @@ private fun PlayerPage(
     followed: Boolean,
     conversation: SongConversation,
     listeningRoom: ListeningRoom?,
+    roomParticipants: List<ListeningParticipant>,
+    roomMessages: List<RoomMessage>,
+    roomReactions: List<RoomReaction>,
+    joinedParticipantNotice: ListeningParticipant?,
     listenerId: String,
     listenerName: String,
     listenerAvatarUrl: String?,
@@ -1138,6 +1200,8 @@ private fun PlayerPage(
     onStartListeningTogether: () -> Unit,
     onShareListeningRoom: (ListeningRoom) -> Unit,
     onLeaveListeningRoom: () -> Unit,
+    onSendRoomReaction: (String) -> Unit,
+    onSendRoomMessage: (String) -> Unit,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1219,6 +1283,17 @@ private fun PlayerPage(
             onPlayQueue = onPlayQueue,
             onDismiss = { playerSheet = null }
         )
+        PlayerSheet.LiveRoom -> listeningRoom?.let { room ->
+            LiveRoomSheet(
+                room = room,
+                participants = roomParticipants,
+                messages = roomMessages,
+                listenerId = listenerId,
+                onSendMessage = onSendRoomMessage,
+                onShareRoom = { onShareListeningRoom(room) },
+                onDismiss = { playerSheet = null }
+            )
+        }
         null -> Unit
     }
     Box(
@@ -1374,28 +1449,70 @@ private fun PlayerPage(
             }
         }
         listeningRoom?.let { room ->
-            Surface(
-                color = Color.Black.copy(.34f),
-                contentColor = DarkPaper,
-                shape = CircleShape,
+            Column(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
-                    .padding(top = 12.dp)
+                    .padding(top = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Row(
-                    Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    color = Color.Black.copy(.42f),
+                    contentColor = DarkPaper,
+                    shape = CircleShape,
+                    modifier = Modifier.clickable { playerSheet = PlayerSheet.LiveRoom }
                 ) {
-                    Icon(Icons.Outlined.PeopleAlt, contentDescription = null, tint = Lime, modifier = Modifier.size(17.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        if (room.hostId == listenerId) "Listening together · You host" else "Listening with ${room.hostName}",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Outlined.PeopleAlt, contentDescription = null, tint = Lime, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "${roomParticipants.size.coerceAtLeast(1)} listening · " +
+                                if (room.hostId == listenerId) "You host" else "Guest",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Icon(Icons.Filled.ExpandMore, contentDescription = "Open live room", modifier = Modifier.size(17.dp))
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Surface(color = Color.Black.copy(.30f), shape = CircleShape) {
+                    Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                        listOf("❤️", "🙌", "🔥", "👏", "😍", "🎶").forEach { emoji ->
+                            Text(
+                                emoji,
+                                fontSize = 19.sp,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .clickable { onSendRoomReaction(emoji) }
+                                    .padding(horizontal = 5.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                }
+                AnimatedVisibility(visible = joinedParticipantNotice != null) {
+                    Surface(
+                        color = Violet.copy(.92f),
+                        contentColor = Color.White,
+                        shape = CircleShape,
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Text(
+                            "${joinedParticipantNotice?.name.orEmpty()} joined the room",
+                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
+            FloatingRoomReactions(
+                reactions = roomReactions,
+                modifier = Modifier.align(Alignment.Center)
+            )
         }
         AnimatedVisibility(visible = showPlayPause, modifier = Modifier.align(Alignment.Center), enter = fadeIn(tween(140)), exit = fadeOut(tween(220))) {
             Box(
@@ -1495,6 +1612,208 @@ private fun PlayerPage(
                 Action(if (saved) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder, if (saved) "Saved" else "Save", saved, onToggleSave)
                 Action(Icons.Outlined.ChatBubbleOutline, "Comments", conversation.comments.isNotEmpty()) { playerSheet = PlayerSheet.Comments }
                 Action(Icons.Outlined.Share, "Share", onClick = onShare)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FloatingRoomReactions(
+    reactions: List<RoomReaction>,
+    modifier: Modifier = Modifier
+) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(reactions.lastOrNull()?.id) {
+        repeat(12) {
+            now = System.currentTimeMillis()
+            delay(300L)
+        }
+    }
+    val visible = reactions.filter { now - it.createdAtEpochMs in 0L..3_600L }.takeLast(9)
+    Box(modifier.size(width = 310.dp, height = 300.dp)) {
+        visible.forEachIndexed { index, reaction ->
+            val column = (reaction.id.hashCode() and Int.MAX_VALUE) % 5
+            AnimatedVisibility(
+                visible = true,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(
+                        x = ((column - 2) * 48).dp,
+                        y = (-(index * 25)).dp
+                    ),
+                enter = fadeIn(tween(120)) + scaleIn(tween(220), initialScale = .45f),
+                exit = fadeOut(tween(300)) + scaleOut(tween(300))
+            ) {
+                Surface(
+                    color = Color.Black.copy(.42f),
+                    shape = CircleShape,
+                    shadowElevation = 7.dp
+                ) {
+                    Text(
+                        reaction.emoji,
+                        fontSize = 30.sp,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LiveRoomSheet(
+    room: ListeningRoom,
+    participants: List<ListeningParticipant>,
+    messages: List<RoomMessage>,
+    listenerId: String,
+    onSendMessage: (String) -> Unit,
+    onShareRoom: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var messageText by remember(room.id) { mutableStateOf("") }
+    val messageListState = rememberLazyListState()
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) messageListState.animateScrollToItem(messages.lastIndex)
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFFF8F4FF),
+        contentColor = DarkInk,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = Muted.copy(.45f)) }
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = 18.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Live room", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+                    Text(
+                        "${participants.size.coerceAtLeast(1)} listening · ${room.hostName} hosts",
+                        color = Muted,
+                        fontSize = 13.sp
+                    )
+                }
+                FilledTonalIconButton(onClick = onShareRoom) {
+                    Icon(Icons.Outlined.PersonAddAlt, contentDescription = "Invite friends")
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Surface(color = Violet.copy(.10f), shape = RoundedCornerShape(18.dp)) {
+                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.QueueMusic, contentDescription = null, tint = Violet)
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(room.song.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("Added by ${room.songAddedByName}", color = Muted, fontSize = 12.sp)
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Text("LISTENERS", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+            LazyRow(
+                modifier = Modifier.fillMaxWidth().padding(top = 9.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(participants, key = ListeningParticipant::id) { participant ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(68.dp)) {
+                        Box {
+                            ProfileAvatar(participant.name, participant.avatarUrl, 48.dp)
+                            Surface(
+                                color = if (participant.isHost) Lime else Violet,
+                                shape = CircleShape,
+                                modifier = Modifier.align(Alignment.BottomEnd)
+                            ) {
+                                Icon(
+                                    if (participant.isHost) Icons.Filled.Star else Icons.Filled.Person,
+                                    contentDescription = if (participant.isHost) "Host" else "Guest",
+                                    tint = if (participant.isHost) DarkInk else Color.White,
+                                    modifier = Modifier.padding(3.dp).size(12.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            if (participant.id == listenerId) "You" else participant.name.substringBefore(' '),
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(if (participant.isHost) "Host" else "Guest", color = Muted, fontSize = 9.sp)
+                    }
+                }
+            }
+            HorizontalDivider(Modifier.padding(vertical = 13.dp), color = Muted.copy(.18f))
+            Text("ROOM CHAT", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+            LazyColumn(
+                state = messageListState,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 170.dp, max = 310.dp).padding(top = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                if (messages.isEmpty()) {
+                    item {
+                        Text(
+                            "Say hi to everyone listening 🎶",
+                            color = Muted,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 34.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+                items(messages, key = RoomMessage::id) { message ->
+                    val mine = message.authorId == listenerId
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        if (!mine) {
+                            ProfileAvatar(message.authorName, message.authorAvatarUrl, 30.dp)
+                            Spacer(Modifier.width(7.dp))
+                        }
+                        Surface(
+                            color = if (mine) Violet else Color.White,
+                            contentColor = if (mine) Color.White else DarkInk,
+                            shape = RoundedCornerShape(16.dp),
+                            shadowElevation = if (mine) 0.dp else 1.dp,
+                            modifier = Modifier.widthIn(max = 280.dp)
+                        ) {
+                            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                if (!mine) Text(message.authorName, color = Violet, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text(message.message, fontSize = 14.sp)
+                            }
+                        }
+                    }
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = messageText,
+                    onValueChange = { if (it.length <= 500) messageText = it },
+                    placeholder = { Text("Message the room…") },
+                    shape = CircleShape,
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                FilledIconButton(
+                    onClick = {
+                        messageText.trim().takeIf(String::isNotEmpty)?.let {
+                            onSendMessage(it)
+                            messageText = ""
+                        }
+                    },
+                    enabled = messageText.isNotBlank(),
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = Violet)
+                ) {
+                    Icon(Icons.Filled.Send, contentDescription = "Send message")
+                }
             }
         }
     }
