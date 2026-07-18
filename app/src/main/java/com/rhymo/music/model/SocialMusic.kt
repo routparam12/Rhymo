@@ -6,7 +6,8 @@ data class SongComment(
     val message: String,
     val createdAtEpochMs: Long,
     val likeCount: Int = 0,
-    val likedByMe: Boolean = false
+    val likedByMe: Boolean = false,
+    val parentCommentId: String? = null
 )
 
 data class SongConversation(
@@ -14,4 +15,3 @@ data class SongConversation(
     val reactionCounts: Map<String, Int> = emptyMap(),
     val selectedReaction: String? = null
 )
-

@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.outlined.Delete
@@ -69,6 +70,7 @@ import androidx.compose.ui.unit.sp
 import com.rhymo.music.data.LyricsRepository
 import com.rhymo.music.data.SaavnMusicRepository
 import com.rhymo.music.model.Song
+import com.rhymo.music.model.SongComment
 import com.rhymo.music.model.SongConversation
 import com.rhymo.music.model.SongLyrics
 import com.rhymo.music.ui.theme.HotPink
@@ -196,7 +198,7 @@ fun CommentsSheet(
     conversation: SongConversation,
     listenerName: String,
     onReact: (String) -> Unit,
-    onAddComment: (String, String) -> Unit,
+    onAddComment: (String, String, String?) -> Unit,
     onToggleCommentLike: (String) -> Unit,
     onEditComment: (String, String) -> Unit,
     onDeleteComment: (String) -> Unit,
@@ -206,10 +208,16 @@ fun CommentsSheet(
     var editingCommentId by remember(song.id) { mutableStateOf<String?>(null) }
     var editDraft by remember(song.id) { mutableStateOf("") }
     var deletingCommentId by remember(song.id) { mutableStateOf<String?>(null) }
+    var replyingToCommentId by remember(song.id) { mutableStateOf<String?>(null) }
+    var collapsedThreadIds by remember(song.id) { mutableStateOf(emptySet<String>()) }
     var footerHeightPx by remember(song.id) { mutableIntStateOf(0) }
     val footerHeight = with(LocalDensity.current) { footerHeightPx.toDp() }
     val haptics = LocalHapticFeedback.current
     val reactions = listOf("❤️", "🙌", "🔥", "👏", "👍", "😍", "🙏", "😂")
+    val threadedComments = remember(conversation.comments, collapsedThreadIds) {
+        conversation.comments.asCommentThread(collapsedThreadIds)
+    }
+    val replyingTo = conversation.comments.firstOrNull { it.id == replyingToCommentId }
 
     if (editingCommentId != null) {
         AlertDialog(
@@ -295,10 +303,13 @@ fun CommentsSheet(
                     ),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    items(conversation.comments, key = { it.id }) { comment ->
+                    items(threadedComments, key = { it.comment.id }) { threadedComment ->
+                        val comment = threadedComment.comment
+                        val replyDepth = threadedComment.depth.coerceAtMost(3)
                         Row(
                             Modifier
                                 .fillMaxWidth()
+                                .padding(start = (replyDepth * 24).dp)
                                 .combinedClickable(
                                     onClick = {},
                                     onLongClick = {
@@ -309,9 +320,20 @@ fun CommentsSheet(
                                 .padding(vertical = 2.dp),
                             verticalAlignment = Alignment.Top
                         ) {
+                            if (replyDepth > 0) {
+                                Box(
+                                    Modifier
+                                        .padding(top = 4.dp)
+                                        .widthIn(min = 2.dp, max = 2.dp)
+                                        .height(34.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = .28f))
+                                )
+                                Spacer(Modifier.size(8.dp))
+                            }
                             Box(
                                 Modifier
-                                    .size(42.dp)
+                                    .size(if (replyDepth > 0) 34.dp else 42.dp)
                                     .clip(CircleShape)
                                     .background(Brush.linearGradient(listOf(HotPink, MaterialTheme.colorScheme.primary))),
                                 contentAlignment = Alignment.Center
@@ -335,7 +357,7 @@ fun CommentsSheet(
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         modifier = Modifier.clickable {
-                                            draft = "@${comment.author} "
+                                            replyingToCommentId = comment.id
                                         }
                                     )
                                     Text(
@@ -348,6 +370,26 @@ fun CommentsSheet(
                                             editingCommentId = comment.id
                                         }
                                     )
+                                    if (threadedComment.replyCount > 0) {
+                                        val collapsed = comment.id in collapsedThreadIds
+                                        Text(
+                                            if (collapsed) {
+                                                "View thread · ${threadedComment.replyCount}"
+                                            } else {
+                                                "Hide thread"
+                                            },
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.clickable {
+                                                collapsedThreadIds = if (collapsed) {
+                                                    collapsedThreadIds - comment.id
+                                                } else {
+                                                    collapsedThreadIds + comment.id
+                                                }
+                                            }
+                                        )
+                                    }
                                 }
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -394,6 +436,26 @@ fun CommentsSheet(
                 }
             }
             HorizontalDivider()
+            replyingTo?.let { parentComment ->
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 66.dp, end = 12.dp, top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Replying to ${parentComment.author}",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = { replyingToCommentId = null },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Filled.Close, contentDescription = "Cancel reply", modifier = Modifier.size(17.dp))
+                    }
+                }
+            }
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -410,7 +472,12 @@ fun CommentsSheet(
                     value = draft,
                     onValueChange = { draft = it.take(280) },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Join the conversation…", maxLines = 1) },
+                    placeholder = {
+                        Text(
+                            if (replyingTo == null) "Join the conversation…" else "Write a reply…",
+                            maxLines = 1
+                        )
+                    },
                     singleLine = true,
                     shape = CircleShape,
                     colors = OutlinedTextFieldDefaults.colors(
@@ -422,7 +489,11 @@ fun CommentsSheet(
                     trailingIcon = {
                         IconButton(
                             enabled = draft.isNotBlank(),
-                            onClick = { onAddComment(listenerName, draft); draft = "" }
+                            onClick = {
+                                onAddComment(listenerName, draft, replyingToCommentId)
+                                draft = ""
+                                replyingToCommentId = null
+                            }
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.Send,
@@ -483,6 +554,51 @@ fun RecommendationsSheet(
 }
 
 private fun SongLyrics?.orEmptyLines(): SongLyrics = this ?: SongLyrics(emptyList(), false)
+
+private data class ThreadedComment(
+    val comment: SongComment,
+    val depth: Int,
+    val replyCount: Int
+)
+
+private fun List<SongComment>.asCommentThread(
+    collapsedThreadIds: Set<String>
+): List<ThreadedComment> {
+    val commentIds = mapTo(mutableSetOf(), SongComment::id)
+    val repliesByParent = filter { it.parentCommentId != null }
+        .groupBy(SongComment::parentCommentId)
+    val visited = mutableSetOf<String>()
+    val result = mutableListOf<ThreadedComment>()
+
+    fun countReplies(commentId: String): Int {
+        val counted = mutableSetOf<String>()
+
+        fun countChildren(parentId: String): Int = repliesByParent[parentId]
+            .orEmpty()
+            .sumOf { reply ->
+                if (!counted.add(reply.id)) 0 else 1 + countChildren(reply.id)
+            }
+
+        return countChildren(commentId)
+    }
+
+    fun appendWithReplies(comment: SongComment, depth: Int) {
+        if (!visited.add(comment.id)) return
+        result += ThreadedComment(comment, depth, countReplies(comment.id))
+        if (comment.id in collapsedThreadIds) return
+        repliesByParent[comment.id]
+            .orEmpty()
+            .sortedBy(SongComment::createdAtEpochMs)
+            .forEach { reply -> appendWithReplies(reply, depth + 1) }
+    }
+
+    filter { it.parentCommentId == null || it.parentCommentId !in commentIds }
+        .forEach { rootComment -> appendWithReplies(rootComment, 0) }
+
+    // Keep malformed legacy/cyclic data visible instead of silently dropping it.
+    forEach { comment -> appendWithReplies(comment, 0) }
+    return result
+}
 
 private fun relativeCommentTime(createdAtEpochMs: Long): String {
     val elapsedSeconds = ((System.currentTimeMillis() - createdAtEpochMs).coerceAtLeast(0L) / 1_000L)

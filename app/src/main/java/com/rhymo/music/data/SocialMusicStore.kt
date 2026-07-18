@@ -47,15 +47,19 @@ class SocialMusicStore(context: Context) {
         updateConversation(songId, current.copy(reactionCounts = counts.filterValues { it > 0 }, selectedReaction = newReaction))
     }
 
-    fun addComment(songId: String, author: String, message: String) {
+    fun addComment(songId: String, author: String, message: String, parentCommentId: String? = null) {
         val cleanMessage = message.trim()
         if (cleanMessage.isBlank()) return
         val current = _conversations.value[songId] ?: SongConversation()
+        val validParentId = parentCommentId?.takeIf { parentId ->
+            current.comments.any { it.id == parentId }
+        }
         val comment = SongComment(
             id = UUID.randomUUID().toString(),
             author = author.trim().ifBlank { "Rhymo listener" },
             message = cleanMessage.take(MAX_COMMENT_LENGTH),
-            createdAtEpochMs = System.currentTimeMillis()
+            createdAtEpochMs = System.currentTimeMillis(),
+            parentCommentId = validParentId
         )
         updateConversation(songId, current.copy(comments = listOf(comment) + current.comments))
     }
@@ -84,9 +88,19 @@ class SocialMusicStore(context: Context) {
 
     fun deleteComment(songId: String, commentId: String) {
         val current = _conversations.value[songId] ?: return
+        val idsToDelete = mutableSetOf(commentId)
+        var foundReply = true
+        while (foundReply) {
+            foundReply = false
+            current.comments.forEach { comment ->
+                if (comment.parentCommentId in idsToDelete && idsToDelete.add(comment.id)) {
+                    foundReply = true
+                }
+            }
+        }
         updateConversation(
             songId,
-            current.copy(comments = current.comments.filterNot { it.id == commentId })
+            current.copy(comments = current.comments.filterNot { it.id in idsToDelete })
         )
     }
 
@@ -113,7 +127,9 @@ class SocialMusicStore(context: Context) {
                                 message = comment.optString("message"),
                                 createdAtEpochMs = comment.optLong("createdAtEpochMs"),
                                 likeCount = comment.optInt("likeCount"),
-                                likedByMe = comment.optBoolean("likedByMe")
+                                likedByMe = comment.optBoolean("likedByMe"),
+                                parentCommentId = comment.optString("parentCommentId")
+                                    .takeIf(String::isNotBlank)
                             )
                         )
                     }
@@ -141,6 +157,7 @@ class SocialMusicStore(context: Context) {
                             put("createdAtEpochMs", comment.createdAtEpochMs)
                             put("likeCount", comment.likeCount)
                             put("likedByMe", comment.likedByMe)
+                            put("parentCommentId", comment.parentCommentId.orEmpty())
                         })
                     }
                 })

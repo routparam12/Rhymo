@@ -886,7 +886,7 @@ private fun SwipePlayer(
     onAddToPlaylist: (String, Song) -> Unit,
     onToggleFollow: (String) -> Unit,
     onReact: (String, String) -> Unit,
-    onAddComment: (String, String, String) -> Unit,
+    onAddComment: (String, String, String, String?) -> Unit,
     onToggleCommentLike: (String, String) -> Unit,
     onEditComment: (String, String, String) -> Unit,
     onDeleteComment: (String, String) -> Unit,
@@ -972,7 +972,9 @@ private fun SwipePlayer(
             onAddToPlaylist = { playlistId -> onAddToPlaylist(playlistId, song) },
             onToggleFollow = { onToggleFollow(song.artist) },
             onReact = { emoji -> onReact(song.id, emoji) },
-            onAddComment = { author, message -> onAddComment(song.id, author, message) },
+            onAddComment = { author, message, parentCommentId ->
+                onAddComment(song.id, author, message, parentCommentId)
+            },
             onToggleCommentLike = { commentId -> onToggleCommentLike(song.id, commentId) },
             onEditComment = { commentId, message -> onEditComment(song.id, commentId, message) },
             onDeleteComment = { commentId -> onDeleteComment(song.id, commentId) },
@@ -1063,7 +1065,7 @@ private fun PlayerPage(
     onAddToPlaylist: (String) -> Unit,
     onToggleFollow: () -> Unit,
     onReact: (String) -> Unit,
-    onAddComment: (String, String) -> Unit,
+    onAddComment: (String, String, String?) -> Unit,
     onToggleCommentLike: (String) -> Unit,
     onEditComment: (String, String) -> Unit,
     onDeleteComment: (String) -> Unit,
