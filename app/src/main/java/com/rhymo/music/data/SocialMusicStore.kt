@@ -47,7 +47,13 @@ class SocialMusicStore(context: Context) {
         updateConversation(songId, current.copy(reactionCounts = counts.filterValues { it > 0 }, selectedReaction = newReaction))
     }
 
-    fun addComment(songId: String, author: String, message: String, parentCommentId: String? = null) {
+    fun addComment(
+        songId: String,
+        author: String,
+        message: String,
+        parentCommentId: String? = null,
+        authorAvatarUrl: String? = null
+    ) {
         val cleanMessage = message.trim()
         if (cleanMessage.isBlank()) return
         val current = _conversations.value[songId] ?: SongConversation()
@@ -59,7 +65,8 @@ class SocialMusicStore(context: Context) {
             author = author.trim().ifBlank { "Rhymo listener" },
             message = cleanMessage.take(MAX_COMMENT_LENGTH),
             createdAtEpochMs = System.currentTimeMillis(),
-            parentCommentId = validParentId
+            parentCommentId = validParentId,
+            authorAvatarUrl = authorAvatarUrl?.trim()?.takeIf(String::isNotBlank)
         )
         updateConversation(songId, current.copy(comments = listOf(comment) + current.comments))
     }
@@ -129,6 +136,8 @@ class SocialMusicStore(context: Context) {
                                 likeCount = comment.optInt("likeCount"),
                                 likedByMe = comment.optBoolean("likedByMe"),
                                 parentCommentId = comment.optString("parentCommentId")
+                                    .takeIf(String::isNotBlank),
+                                authorAvatarUrl = comment.optString("authorAvatarUrl")
                                     .takeIf(String::isNotBlank)
                             )
                         )
@@ -158,6 +167,7 @@ class SocialMusicStore(context: Context) {
                             put("likeCount", comment.likeCount)
                             put("likedByMe", comment.likedByMe)
                             put("parentCommentId", comment.parentCommentId.orEmpty())
+                            put("authorAvatarUrl", comment.authorAvatarUrl.orEmpty())
                         })
                     }
                 })

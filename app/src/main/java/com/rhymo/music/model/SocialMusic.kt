@@ -7,7 +7,8 @@ data class SongComment(
     val createdAtEpochMs: Long,
     val likeCount: Int = 0,
     val likedByMe: Boolean = false,
-    val parentCommentId: String? = null
+    val parentCommentId: String? = null,
+    val authorAvatarUrl: String? = null
 )
 
 data class SongConversation(

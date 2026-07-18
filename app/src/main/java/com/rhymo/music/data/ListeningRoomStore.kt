@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.getValue
@@ -53,7 +54,12 @@ class ListeningRoomStore(context: Context) {
             .getOrNull()
             ?: fallbackListenerId
 
-    suspend fun startRoom(song: Song, hostName: String): Result<ListeningRoom> = runCatching {
+    suspend fun startRoom(
+        song: Song,
+        hostName: String,
+        isPlaying: Boolean,
+        positionMs: Long
+    ): Result<ListeningRoom> = runCatching {
         val hostId = requireAuthenticatedListenerId()
         val id = firestore.collection(ROOMS_COLLECTION).document().id
         val now = System.currentTimeMillis()
@@ -62,11 +68,13 @@ class ListeningRoomStore(context: Context) {
             song = song,
             hostId = hostId,
             hostName = hostName,
-            isPlaying = true,
-            positionMs = 0L,
+            isPlaying = isPlaying,
+            positionMs = positionMs.coerceAtLeast(0L),
             updatedAtEpochMs = now
         )
-        awaitWrite(id, room.toFirestoreMap(now))
+        withTimeout(ROOM_OPERATION_TIMEOUT_MS) {
+            awaitWrite(id, room.toFirestoreMap(now))
+        }
         _room.value = room
         observeRoom(id)
         room
@@ -76,7 +84,9 @@ class ListeningRoomStore(context: Context) {
         requireAuthenticatedListenerId()
         val cleanRoomId = roomId.trim().takeIf { it.matches(Regex("[A-Za-z0-9_-]{8,}")) }
             ?: error("This Listen Together link is invalid.")
-        val snapshot = awaitDocument(cleanRoomId)
+        val snapshot = withTimeout(ROOM_OPERATION_TIMEOUT_MS) {
+            awaitDocument(cleanRoomId)
+        }
         val room = snapshot.toListeningRoom() ?: error("This listening room is no longer available.")
         _room.value = room
         observeRoom(cleanRoomId)
@@ -201,5 +211,6 @@ class ListeningRoomStore(context: Context) {
 
     private companion object {
         const val ROOMS_COLLECTION = "listeningRooms"
+        const val ROOM_OPERATION_TIMEOUT_MS = 12_000L
     }
 }

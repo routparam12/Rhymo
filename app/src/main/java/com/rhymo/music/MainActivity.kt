@@ -90,6 +90,7 @@ import com.rhymo.music.model.SongConversation
 import com.rhymo.music.ui.components.CommentsSheet
 import com.rhymo.music.ui.components.LyricsSheet
 import com.rhymo.music.ui.components.RecommendationsSheet
+import com.rhymo.music.ui.components.ProfileAvatar
 import com.rhymo.music.ui.components.musicItems
 import com.rhymo.music.ui.navigation.AppDestination
 import com.rhymo.music.ui.navigation.TopLevelDestinations
@@ -198,8 +199,10 @@ fun RhymoApp(
     var optionsSong by remember { mutableStateOf<Song?>(null) }
     var pendingRoomStartSong by remember { mutableStateOf<Song?>(null) }
     var listenTogetherError by remember { mutableStateOf<String?>(null) }
+    var creatingListeningRoom by remember { mutableStateOf(false) }
 
     fun startListeningTogether(song: Song) {
+        if (creatingListeningRoom) return
         if (auth.currentUser() == null) {
             pendingRoomStartSong = song
             authMessage = "Sign in with Google to start a real-time listening room."
@@ -207,10 +210,16 @@ fun RhymoApp(
             return
         }
         scope.launch {
-            listeningRoomStore.startRoom(
+            creatingListeningRoom = true
+            val playerHasSong = playbackController?.currentMediaItem?.mediaId == song.id
+            val result = listeningRoomStore.startRoom(
                 song = song,
-                hostName = auth.currentUser()?.displayName ?: "Rhymo listener"
-            ).onSuccess { room ->
+                hostName = auth.currentUser()?.displayName ?: "Rhymo listener",
+                isPlaying = playerHasSong && playbackController?.isPlaying == true,
+                positionMs = if (playerHasSong) playbackController?.currentPosition ?: 0L else 0L
+            )
+            creatingListeningRoom = false
+            result.onSuccess { room ->
                 activeQueue = listOf(room.song)
                 selectedSongIndex = 0
                 shareListeningRoom(activity, room)
@@ -364,6 +373,8 @@ fun RhymoApp(
                             when (current) {
                                 AppTab.Home -> HomeScreen(
                                     songs = catalog,
+                                    profileName = auth.currentUser()?.displayName ?: "Rhymo listener",
+                                    profileAvatarUrl = auth.currentUser()?.photoUrl?.toString(),
                                     openPlayer = openSong,
                                     onSongOptions = { optionsSong = it },
                                     openSearch = { tab = AppTab.Search },
@@ -393,6 +404,8 @@ fun RhymoApp(
                                         listeningRoom = listeningRoom,
                                         listenerId = listeningRoomStore.listenerId,
                                         listenerName = auth.currentUser()?.displayName ?: "Rhymo listener",
+                                        listenerAvatarUrl = auth.currentUser()?.photoUrl?.toString(),
+                                        creatingListeningRoom = creatingListeningRoom,
                                         onToggleLike = savedMusicStore::toggleLiked,
                                         onToggleSave = savedMusicStore::toggleSaved,
                                         onDownload = savedMusicStore::download,
@@ -428,6 +441,8 @@ fun RhymoApp(
                                 )
                                 AppTab.Notifications -> HomeScreen(
                                     songs = catalog,
+                                    profileName = auth.currentUser()?.displayName ?: "Rhymo listener",
+                                    profileAvatarUrl = auth.currentUser()?.photoUrl?.toString(),
                                     openPlayer = openSong,
                                     onSongOptions = { optionsSong = it },
                                     openSearch = { tab = AppTab.Search },
@@ -440,7 +455,11 @@ fun RhymoApp(
                                         }
                                     }
                                 )
-                                AppTab.Profile -> ProfileScreen(followedArtists = followedArtists) { auth.signOut(); onboarded = false }
+                                AppTab.Profile -> ProfileScreen(
+                                    profileName = auth.currentUser()?.displayName ?: "Rhymo listener",
+                                    profileAvatarUrl = auth.currentUser()?.photoUrl?.toString(),
+                                    followedArtists = followedArtists
+                                ) { auth.signOut(); onboarded = false }
                             }
                         }
                     }
@@ -482,6 +501,11 @@ fun RhymoApp(
 private fun Throwable.toListenTogetherMessage(): String {
     val detail = message.orEmpty()
     return when {
+        detail.contains("API has not been used", ignoreCase = true) ||
+            detail.contains("Firestore API", ignoreCase = true) && detail.contains("disabled", ignoreCase = true) ->
+            "Cloud Firestore is disabled for Firebase project rhymo-aeefd. Enable the Firestore API, create the default database, and publish the Listen Together rules before retrying."
+        detail.contains("Timed out", ignoreCase = true) || detail.contains("timeout", ignoreCase = true) ->
+            "Room creation timed out because Cloud Firestore did not accept the request. Enable Firestore for project rhymo-aeefd, create its default database, and retry."
         detail.contains("PERMISSION_DENIED", ignoreCase = true) ||
             detail.contains("permission", ignoreCase = true) ->
             "Firestore is blocking this room. Create Cloud Firestore and publish the Listen Together rules in FIREBASE_LISTEN_TOGETHER.md."
@@ -618,6 +642,8 @@ private fun WelcomeScreen(
 private fun HomeScreen(
     modifier: Modifier = Modifier,
     songs: List<Song>,
+    profileName: String,
+    profileAvatarUrl: String?,
     openPlayer: (Song, List<Song>) -> Unit,
     onSongOptions: (Song) -> Unit,
     openSearch: () -> Unit,
@@ -676,7 +702,36 @@ private fun HomeScreen(
         contentPadding = PaddingValues(start = 20.dp, top = 3.dp, end = 20.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(28.dp)
     ) {
-        item { Row(verticalAlignment = Alignment.CenterVertically) { BrandMark(48.dp); Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) { Text(currentDateLabel, color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp); Text("Hey, listener.", style = MaterialTheme.typography.headlineLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) }; Spacer(Modifier.width(10.dp)); NotificationButton(openNotifications); Spacer(Modifier.width(10.dp)); Box(Modifier.size(48.dp).clip(CircleShape).background(Brush.linearGradient(listOf(HotPink, Violet))).clickable(onClick = openProfile), contentAlignment = Alignment.Center) { Text("V", color = DarkInk, fontWeight = FontWeight.Bold) } } }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BrandMark(48.dp)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        currentDateLabel,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.4.sp
+                    )
+                    Text(
+                        "Hey, listener.",
+                        style = MaterialTheme.typography.headlineLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                NotificationButton(openNotifications)
+                Spacer(Modifier.width(10.dp))
+                ProfileAvatar(
+                    name = profileName,
+                    avatarUrl = profileAvatarUrl,
+                    size = 48.dp,
+                    modifier = Modifier.clickable(onClick = openProfile)
+                )
+            }
+        }
         item { Text("What should we play?", color = Muted); Spacer(Modifier.height(12.dp)); Surface(shape = RoundedCornerShape(20.dp), color = InkSoft, modifier = Modifier.fillMaxWidth().shadow(8.dp, RoundedCornerShape(20.dp), ambientColor = Violet.copy(.14f), spotColor = Violet.copy(.12f)).border(1.dp, MaterialTheme.colorScheme.primary.copy(.10f), RoundedCornerShape(20.dp)).clickable(onClick = openSearch)) { Row(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(34.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(.10f)), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) }; Spacer(Modifier.width(12.dp)); Text("Songs, artists, albums…", color = Muted) } } }
         item { Column { SectionTitle("TRENDING NOW", "See all", onTrailingClick = { showAllTrending = true }); Spacer(Modifier.height(6.dp)); Text("Pick a mood to tune your recommendations.", color = Muted, fontSize = 13.sp) } }
         item { LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(end = 12.dp)) { items(trendTags) { tag -> Chip(text = tag, selected = selectedTrend == tag, showHash = true) { selectedTrend = tag; onMoodSelected(tag) } } } }
@@ -880,13 +935,15 @@ private fun SwipePlayer(
     listeningRoom: ListeningRoom?,
     listenerId: String,
     listenerName: String,
+    listenerAvatarUrl: String?,
+    creatingListeningRoom: Boolean,
     onToggleLike: (Song) -> Unit,
     onToggleSave: (Song) -> Unit,
     onDownload: (Song) -> Unit,
     onAddToPlaylist: (String, Song) -> Unit,
     onToggleFollow: (String) -> Unit,
     onReact: (String, String) -> Unit,
-    onAddComment: (String, String, String, String?) -> Unit,
+    onAddComment: (String, String, String, String?, String?) -> Unit,
     onToggleCommentLike: (String, String) -> Unit,
     onEditComment: (String, String, String) -> Unit,
     onDeleteComment: (String, String) -> Unit,
@@ -966,14 +1023,16 @@ private fun SwipePlayer(
             listeningRoom = listeningRoom?.takeIf { it.song.id == song.id },
             listenerId = listenerId,
             listenerName = listenerName,
+            listenerAvatarUrl = listenerAvatarUrl,
+            creatingListeningRoom = creatingListeningRoom,
             onToggleLike = { onToggleLike(song) },
             onToggleSave = { onToggleSave(song) },
             onDownload = { onDownload(song) },
             onAddToPlaylist = { playlistId -> onAddToPlaylist(playlistId, song) },
             onToggleFollow = { onToggleFollow(song.artist) },
             onReact = { emoji -> onReact(song.id, emoji) },
-            onAddComment = { author, message, parentCommentId ->
-                onAddComment(song.id, author, message, parentCommentId)
+            onAddComment = { author, message, parentCommentId, authorAvatarUrl ->
+                onAddComment(song.id, author, message, parentCommentId, authorAvatarUrl)
             },
             onToggleCommentLike = { commentId -> onToggleCommentLike(song.id, commentId) },
             onEditComment = { commentId, message -> onEditComment(song.id, commentId, message) },
@@ -1059,13 +1118,15 @@ private fun PlayerPage(
     listeningRoom: ListeningRoom?,
     listenerId: String,
     listenerName: String,
+    listenerAvatarUrl: String?,
+    creatingListeningRoom: Boolean,
     onToggleLike: () -> Unit,
     onToggleSave: () -> Unit,
     onDownload: () -> Unit,
     onAddToPlaylist: (String) -> Unit,
     onToggleFollow: () -> Unit,
     onReact: (String) -> Unit,
-    onAddComment: (String, String, String?) -> Unit,
+    onAddComment: (String, String, String?, String?) -> Unit,
     onToggleCommentLike: (String) -> Unit,
     onEditComment: (String, String) -> Unit,
     onDeleteComment: (String) -> Unit,
@@ -1142,6 +1203,7 @@ private fun PlayerPage(
             song = song,
             conversation = conversation,
             listenerName = listenerName,
+            listenerAvatarUrl = listenerAvatarUrl,
             onReact = onReact,
             onAddComment = onAddComment,
             onToggleCommentLike = onToggleCommentLike,
@@ -1226,10 +1288,18 @@ private fun PlayerPage(
                     HorizontalDivider()
                     if (listeningRoom == null) {
                         DropdownMenuItem(
-                            text = { Text("Listen together") },
-                            leadingIcon = { Icon(Icons.Outlined.PeopleAlt, contentDescription = null) },
+                            text = {
+                                Text(if (creatingListeningRoom) "Creating listening room…" else "Listen together")
+                            },
+                            leadingIcon = {
+                                if (creatingListeningRoom) {
+                                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(Icons.Outlined.PeopleAlt, contentDescription = null)
+                                }
+                            },
+                            enabled = !creatingListeningRoom,
                             onClick = {
-                                showPlayerMenu = false
                                 onStartListeningTogether()
                             }
                         )
@@ -1945,19 +2015,23 @@ internal fun NotificationsScreen(modifier: Modifier = Modifier, onClose: () -> U
 }
 
 @Composable
-private fun ProfileScreen(modifier: Modifier = Modifier, followedArtists: Set<String>, onSignOut: () -> Unit) {
+private fun ProfileScreen(
+    modifier: Modifier = Modifier,
+    profileName: String,
+    profileAvatarUrl: String?,
+    followedArtists: Set<String>,
+    onSignOut: () -> Unit
+) {
     LazyColumn(modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(start = 20.dp, top = 6.dp, end = 20.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { Text("Your profile", style = MaterialTheme.typography.headlineLarge); Text("Taste, playback and account controls.", color = Muted) }
-        item { Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Brush.linearGradient(listOf(Violet, HotPink))).padding(24.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { BrandMark(68.dp); Spacer(Modifier.width(18.dp)); Column { Text("Rhymo listener", style = MaterialTheme.typography.headlineMedium); Text("Early listener · Level 04", color = Paper.copy(.75f)) } } } }
+        item { Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Brush.linearGradient(listOf(Violet, HotPink))).padding(24.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { ProfileAvatar(name = profileName, avatarUrl = profileAvatarUrl, size = 68.dp); Spacer(Modifier.width(18.dp)); Column { Text(profileName, style = MaterialTheme.typography.headlineMedium); Text("Early listener · Level 04", color = Paper.copy(.75f)) } } } }
         item { LibraryCard(Icons.Outlined.PeopleOutline, "Following", "${followedArtists.size} ${if (followedArtists.size == 1) "artist" else "artists"} in your circle", HotPink) }
         if (followedArtists.isNotEmpty()) {
             item { SectionTitle("ARTISTS YOU FOLLOW", followedArtists.size.toString()) }
             items(followedArtists.sorted()) { artist ->
                 Surface(color = InkSoft, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(42.dp).clip(CircleShape).background(Brush.linearGradient(listOf(HotPink, Violet))), contentAlignment = Alignment.Center) {
-                            Text(artist.take(1).uppercase(), color = DarkPaper, fontWeight = FontWeight.Black)
-                        }
+                        ProfileAvatar(name = artist, avatarUrl = null, size = 42.dp)
                         Spacer(Modifier.width(12.dp))
                         Text(artist, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }

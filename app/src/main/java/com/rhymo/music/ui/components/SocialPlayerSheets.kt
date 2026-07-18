@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Lyrics
@@ -197,8 +198,9 @@ fun CommentsSheet(
     song: Song,
     conversation: SongConversation,
     listenerName: String,
+    listenerAvatarUrl: String?,
     onReact: (String) -> Unit,
-    onAddComment: (String, String, String?) -> Unit,
+    onAddComment: (String, String, String?, String?) -> Unit,
     onToggleCommentLike: (String) -> Unit,
     onEditComment: (String, String) -> Unit,
     onDeleteComment: (String) -> Unit,
@@ -306,12 +308,22 @@ fun CommentsSheet(
                     items(threadedComments, key = { it.comment.id }) { threadedComment ->
                         val comment = threadedComment.comment
                         val replyDepth = threadedComment.depth.coerceAtMost(3)
+                        val threadCollapsed = comment.id in collapsedThreadIds
+                        val toggleThread: () -> Unit = {
+                            collapsedThreadIds = if (threadCollapsed) {
+                                collapsedThreadIds - comment.id
+                            } else {
+                                collapsedThreadIds + comment.id
+                            }
+                        }
                         Row(
                             Modifier
                                 .fillMaxWidth()
                                 .padding(start = (replyDepth * 24).dp)
                                 .combinedClickable(
-                                    onClick = {},
+                                    onClick = {
+                                        if (threadedComment.replyCount > 0) toggleThread()
+                                    },
                                     onLongClick = {
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         deletingCommentId = comment.id
@@ -331,15 +343,13 @@ fun CommentsSheet(
                                 )
                                 Spacer(Modifier.size(8.dp))
                             }
-                            Box(
-                                Modifier
-                                    .size(if (replyDepth > 0) 34.dp else 42.dp)
-                                    .clip(CircleShape)
-                                    .background(Brush.linearGradient(listOf(HotPink, MaterialTheme.colorScheme.primary))),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(comment.author.take(1).uppercase(), color = Paper, fontWeight = FontWeight.Black)
-                            }
+                            ProfileAvatar(
+                                name = comment.author,
+                                avatarUrl = comment.authorAvatarUrl ?: listenerAvatarUrl.takeIf {
+                                    comment.author.equals(listenerName, ignoreCase = true)
+                                },
+                                size = if (replyDepth > 0) 34.dp else 42.dp
+                            )
                             Spacer(Modifier.size(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -371,24 +381,39 @@ fun CommentsSheet(
                                         }
                                     )
                                     if (threadedComment.replyCount > 0) {
-                                        val collapsed = comment.id in collapsedThreadIds
-                                        Text(
-                                            if (collapsed) {
-                                                "View thread · ${threadedComment.replyCount}"
-                                            } else {
-                                                "Hide thread"
-                                            },
-                                            color = MaterialTheme.colorScheme.primary,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            modifier = Modifier.clickable {
-                                                collapsedThreadIds = if (collapsed) {
-                                                    collapsedThreadIds - comment.id
-                                                } else {
-                                                    collapsedThreadIds + comment.id
+                                        if (threadCollapsed) {
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.primary.copy(alpha = .12f),
+                                                shape = CircleShape,
+                                                modifier = Modifier.clickable(onClick = toggleThread)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(
+                                                        Icons.Filled.KeyboardArrowDown,
+                                                        contentDescription = "Show ${threadedComment.replyCount} replies",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                    Text(
+                                                        threadedComment.replyCount.toString(),
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
                                                 }
                                             }
-                                        )
+                                        } else {
+                                            Text(
+                                                "Hide thread",
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                modifier = Modifier.clickable(onClick = toggleThread)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -460,13 +485,7 @@ fun CommentsSheet(
                 Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    Modifier.size(42.dp).clip(CircleShape)
-                        .background(Brush.linearGradient(listOf(HotPink, MaterialTheme.colorScheme.primary))),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(listenerName.take(1).uppercase(), color = Paper, fontWeight = FontWeight.Black)
-                }
+                ProfileAvatar(name = listenerName, avatarUrl = listenerAvatarUrl, size = 42.dp)
                 Spacer(Modifier.size(10.dp))
                 OutlinedTextField(
                     value = draft,
@@ -490,7 +509,7 @@ fun CommentsSheet(
                         IconButton(
                             enabled = draft.isNotBlank(),
                             onClick = {
-                                onAddComment(listenerName, draft, replyingToCommentId)
+                                onAddComment(listenerName, draft, replyingToCommentId, listenerAvatarUrl)
                                 draft = ""
                                 replyingToCommentId = null
                             }
