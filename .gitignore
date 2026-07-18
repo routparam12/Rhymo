@@ -13,3 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+# Firebase configuration contains project credentials. Keep a private local copy only.
+/app/google-services.json

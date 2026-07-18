@@ -34,6 +34,17 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Shareable Listen Together links open directly inside Rhymo. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="listen"
+                    android:scheme="rhymo" />
+            </intent-filter>
         </activity>
     </application>
 

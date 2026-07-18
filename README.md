@@ -17,6 +17,7 @@ The project is currently a functional prototype. It uses an unofficial catalog A
 - Responsive phone/tablet navigation and predictable Android back behavior
 - Persistent liked songs, saved songs, offline downloads, and custom playlists
 - Song sharing through the Android share sheet
+- **Listen Together:** share a Rhymo room link and play one song in sync with a friend anywhere
 - Synchronized lyrics with highlighted playback position and lyric-line sharing
 - Song reactions and comments with like, edit, and delete actions
 - Artist follow/unfollow state and a following list on Profile
@@ -29,6 +30,7 @@ Rhymo has no Premium tier, subscription, locked audio quality, paid downloads, o
 | Area | Status | Notes |
 | --- | --- | --- |
 | Google authentication | Functional | Firebase Auth + Android Credential Manager |
+| Listen Together | Functional after Firestore setup | Host controls play, pause, and seek; guests automatically catch up |
 | Guest mode | Functional | Does not require sign-in |
 | Search and catalog | Prototype | Uses the unofficial Saavn API |
 | Streaming playback | Functional prototype | Media3 queue and background service |
@@ -37,7 +39,7 @@ Rhymo has no Premium tier, subscription, locked audio quality, paid downloads, o
 | Lyrics | Functional when available | Timed/plain lyrics from LRCLIB |
 | Comments and reactions | Functional locally | Not shared between users or devices yet |
 | Artist following | Functional locally | Stored on the device |
-| Deep links | Planned | Shared links currently open the provider URL |
+| Deep links | Functional | `rhymo://listen?room=…` joins a shared listening room |
 | Production music licensing | Required | Must be completed before distribution |
 
 ## Tech stack
@@ -47,6 +49,7 @@ Rhymo has no Premium tier, subscription, locked audio quality, paid downloads, o
 - Kotlin Coroutines and Flow
 - Media3 ExoPlayer and `MediaSessionService`
 - Firebase Authentication
+- Cloud Firestore for real-time Listen Together room state
 - Android Credential Manager and Google ID
 - Retrofit with Gson
 - Coil 3
@@ -97,6 +100,8 @@ Rhymo expects the Firebase Android app package to be `com.rhymo.music`.
 7. Place it at `app/google-services.json`.
 8. Sync Gradle and rebuild the app.
 
+For **Listen Together**, also create a Cloud Firestore database and publish the authenticated rules in [FIREBASE_LISTEN_TOGETHER.md](FIREBASE_LISTEN_TOGETHER.md). Google sign-in is required for that production-safe rule set.
+
 For Play Store releases, also add the Play App Signing SHA fingerprints. Full instructions and recommended Firebase services are documented in [FIREBASE_SETUP.md](FIREBASE_SETUP.md).
 
 ### 3. Build and verify
@@ -126,7 +131,7 @@ You can also open the project in Android Studio and run the `app` configuration 
 
 - **Home:** greeting, mood discovery, trending card, fresh tracks, notifications, and profile
 - **Search:** remote search with popular suggestions and reusable song rows
-- **Swipe player:** vertical queue, playback gestures, lyrics, comments, reactions, follow, save, download, playlist, and share actions
+- **Swipe player:** vertical queue, playback gestures, lyrics, comments, reactions, follow, save, download, playlist, share, and Listen Together actions
 - **Library:** liked songs, offline downloads, saved tracks, and user-created playlists
 - **Profile:** followed artists, listening entry points, and sign out
 
@@ -142,7 +147,16 @@ The bottom navigation contains Home, Search, and Library. The immersive player o
 | Drag seek bar | Seek within the current track |
 | Lyrics card | Open synchronized lyrics |
 | Comment action | Open reactions and song conversation |
-| Three-dot action | Lyrics, recommendations, download, and playlist options |
+| Three-dot action | Lyrics, recommendations, **Listen together**, download, and playlist options |
+
+### Listen Together
+
+1. Start a song, then open **⋮ → Listen together**.
+2. Share the generated Rhymo link with a friend.
+3. When they open it in Rhymo, the same track starts at the host's current position.
+4. Host play, pause, and seek actions synchronize in real time. Guests can still like, save, comment, and share without interrupting the host.
+
+Each phone streams the track directly from the music provider—Rhymo synchronizes playback state only and never relays audio.
 
 The center play/pause indicator automatically disappears after one second. The player loads the queue into Media3 once and changes tracks after the pager settles, reducing unnecessary rebuffering and UI jank.
 
@@ -165,6 +179,8 @@ Downloaded audio is stored inside the app's private files directory.
 - edited/deleted comment state
 
 This social state is currently local to one installation. It is intentionally behind a repository boundary so it can later be replaced with Firestore without redesigning the Compose UI.
+
+`ListeningRoomStore` uses Cloud Firestore for temporary, real-time room state. It persists no playback history on the device. See [FIREBASE_LISTEN_TOGETHER.md](FIREBASE_LISTEN_TOGETHER.md) for the rule set and setup steps.
 
 For real multi-user social features, use authenticated Firebase collections such as:
 
@@ -201,6 +217,7 @@ app/src/main/java/com/rhymo/music/
 │   ├── SaavnMusicRepository.kt     # Search and recommendation mapping
 │   ├── SavedMusicStore.kt          # Library, downloads, and playlists
 │   ├── SocialMusicStore.kt         # Follows, reactions, and comments
+│   ├── ListeningRoomStore.kt        # Firestore-backed real-time playback rooms
 │   └── remote/SaavnApi.kt          # Retrofit API models/endpoints
 ├── model/                          # Song, lyrics, and social models
 ├── notifications/                 # Notification dialog fragment
@@ -233,6 +250,13 @@ The Google Services plugin did not generate the Firebase resources. Confirm `app
 - Remember that the prototype catalog and lyrics providers are external services.
 - Do not treat these services as production SLAs.
 
+### Listen Together cannot create or join a room
+
+- Sign in with Google (the recommended Firestore rules require an authenticated Firebase user).
+- Create Cloud Firestore in the Firebase project, then publish the rules from [FIREBASE_LISTEN_TOGETHER.md](FIREBASE_LISTEN_TOGETHER.md).
+- Confirm the installed app uses the same `google-services.json` Firebase project as the friend who created the link.
+- Both listeners still need a working music-stream connection; the room sync does not transfer audio.
+
 ### Local library or comments disappeared
 
 Likes, playlists, follows, reactions, and comments are currently stored locally. Clearing app data or uninstalling the app removes them. Offline downloads are also app-private and are deleted with app data.
@@ -241,6 +265,7 @@ Likes, playlists, follows, reactions, and comments are currently stored locally.
 
 - [PRODUCT_UI_PLAN.md](PRODUCT_UI_PLAN.md) — product vision, UX principles, implementation status, and roadmap
 - [FIREBASE_SETUP.md](FIREBASE_SETUP.md) — Firebase setup and service recommendations
+- [FIREBASE_LISTEN_TOGETHER.md](FIREBASE_LISTEN_TOGETHER.md) — Cloud Firestore room rules and real-time listening setup
 - [FREE_PRODUCT_POLICY.md](FREE_PRODUCT_POLICY.md) — permanent free-product constraints
 
 ## Production checklist
@@ -265,4 +290,3 @@ Keep changes aligned with Rhymo's free-product policy and Compose architecture. 
 ```
 
 Do not commit private signing keys, service-account credentials, production secrets, licensed audio files, or user data.
-
